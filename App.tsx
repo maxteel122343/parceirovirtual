@@ -52,12 +52,9 @@ function App() {
   const [callReason, setCallReason] = useState<string>('initial');
   const [nextScheduledCall, setNextScheduledCall] = useState<ScheduledCall | null>(null);
   const [apiKey, setApiKey] = useState<string>(() => {
-    const saved = localStorage.getItem('GEMINI_API_KEY');
-    if (saved === "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s" || saved === "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4" || !saved) {
-      localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
-      return DEFAULT_GEMINI_API_KEY;
-    }
-    return saved;
+    // Always use the built-in default key - users should never need to enter one manually
+    localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
+    return DEFAULT_GEMINI_API_KEY;
   });
   const [user, setUser] = useState<any>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
@@ -101,11 +98,8 @@ function App() {
             setCurrentUserProfile(data);
             if (data.ai_settings) {
               const settings = data.ai_settings as any;
-              if (settings.gemini_api_key) {
-                setApiKey(settings.gemini_api_key);
-              } else {
+              // Always use default key - never override with potentially stale saved key
                 setApiKey(DEFAULT_GEMINI_API_KEY);
-              }
 
               if (!settings.originalPartnerId && data.id) {
                 settings.originalPartnerId = data.id;
