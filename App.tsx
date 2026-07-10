@@ -376,7 +376,10 @@ function App() {
   };
 
   const handleAcceptCallback = async () => {
-    if (!activeCallId) return;
+    if (!activeCallId) {
+      setAppState('CALLING');
+      return;
+    }
 
     // Update status to accepted
     await supabase.from('calls').update({ status: 'accepted' }).eq('id', activeCallId);
