@@ -95,9 +95,9 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                             sessionPromise.then(session => {
                                 aiSession = session;
                                 sessionRef.current = session;
-                                session.sendRealtimeInput({
-                                    text: "O usuário acabou de entrar no aplicativo. Dê as boas vindas rapidamente de forma calorosa."
-                                });
+                                // Use send() instead of sendRealtimeInput to ensure turnComplete: true is sent
+                                // since there is no microphone audio stream to trigger the VAD.
+                                session.send("O usuário acabou de entrar no aplicativo. Dê as boas vindas rapidamente de forma calorosa.");
                             });
                         },
                         onmessage: async (message: LiveServerMessage) => {
