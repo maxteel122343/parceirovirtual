@@ -37,7 +37,7 @@ const DEFAULT_PROFILE: PartnerProfile = {
   custom_ais: []
 };
 
-const DEFAULT_GEMINI_API_KEY = "AIzaSyASaen78QQT19xqOW0WBnMJkjQWtis1A10";
+const DEFAULT_GEMINI_API_KEY = "AIzaSyBeVsoN5bbaQXzebvodYfFE7TLyCfsb00U";
 
 type AppState = 'SETUP' | 'CALLING' | 'WAITING' | 'INCOMING' | 'OUTBOUND_CALLING' | 'HUMAN_CALL';
 
@@ -53,7 +53,7 @@ function App() {
   const [nextScheduledCall, setNextScheduledCall] = useState<ScheduledCall | null>(null);
   const [apiKey, setApiKey] = useState<string>(() => {
     const saved = localStorage.getItem('GEMINI_API_KEY');
-    if (saved === "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s" || saved === "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4" || !saved) {
+    if (saved === "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s" || saved === "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4" || saved === "AIzaSyASaen78QQT19xqOW0WBnMJkjQWtis1A10" || !saved) {
       localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
       return DEFAULT_GEMINI_API_KEY;
     }
