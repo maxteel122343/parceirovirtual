@@ -82,7 +82,9 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                         speechConfig: {
                             voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
                         },
-                        systemInstruction: systemInstruction,
+                        systemInstruction: {
+                            parts: [{ text: systemInstruction }]
+                        },
                     }
                 };
 
@@ -103,7 +105,12 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                         onmessage: async (message: LiveServerMessage) => {
                             const allParts = message.serverContent?.modelTurn?.parts ?? [];
                             const audioPart = allParts.find((p: any) => p?.inlineData?.data);
+                            const textPart = allParts.find((p: any) => p?.text);
                             const base64Audio = audioPart ? (audioPart as any).inlineData.data : undefined;
+                            
+                            if (textPart && !base64Audio) {
+                                alert("O Gemini enviou apenas texto, sem áudio: " + textPart.text);
+                            }
 
                             if (base64Audio && audioContextRef.current) {
                                 if (audioContextRef.current.state === 'suspended') {
@@ -115,6 +122,9 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                                 }
                                 
                                 console.log("Recebendo áudio de boas-vindas e reproduzindo...");
+                                // Temporarily alert the user so we know the audio actually reached the browser
+                                alert("O Gemini enviou o áudio de boas-vindas! Se você não ouvir, é bloqueio do navegador.");
+                                
                                 nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioContextRef.current.currentTime);
                                 const audioBuffer = await decodeAudioData(new Uint8Array(decode(base64Audio)), audioContextRef.current, 24000, 1);
 
@@ -135,8 +145,9 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                         }
                     }
                 });
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Failed to play welcome voice", err);
+                alert("Erro ao conectar no sistema de voz de boas vindas: " + (err.message || err.toString()));
             }
         };
 
