@@ -954,7 +954,14 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               textChannelBufferRef.current = ''; // clear text channel buffer on interruption
             }
           },
-          onclose: () => setIsConnected(false),
+          onclose: () => {
+            console.log("WebSocket connection closed.");
+            setIsConnected(false);
+            if (sessionRef.current) {
+              alert("A conexão com a IA foi encerrada ou bloqueada. Verifique as permissões da chave de API (Restrições de Aplicativo) no Google Cloud.");
+              onEndCall('error');
+            }
+          },
           onerror: (err) => { 
             console.error(err); 
             alert(`Erro na API: ${err.message || err.toString()}`); 
