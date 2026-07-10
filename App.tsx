@@ -268,20 +268,22 @@ function App() {
   };
 
   const handleCallPartner = async (partnerProfile: PartnerProfile, isAi: boolean = true, callId?: string) => {
-    if (!user) {
-      alert("Faça login para ligar!");
-      setShowAuth(true);
-      return;
-    }
     isOutboundHumanCallRef.current = !isAi;
     if (isAi) {
-      const { data } = await supabase.from('calls').insert({
-        caller_id: user.id,
-        target_id: partnerProfile.callerInfo?.id || user.id,
-        is_ai_call: true,
-        status: 'pending'
-      }).select().single();
-      if (data) setActiveCallId(data.id);
+      if (user) {
+        const { data } = await supabase.from('calls').insert({
+          caller_id: user.id,
+          target_id: partnerProfile.callerInfo?.id || user.id,
+          is_ai_call: true,
+          status: 'pending'
+        }).select().single();
+        if (data) setActiveCallId(data.id);
+      } else {
+        // Fake acceptance for non-logged in users
+        setTimeout(() => {
+          setAppState('CALLING');
+        }, 3000);
+      }
     } else if (callId) {
       setActiveCallId(callId);
     }
