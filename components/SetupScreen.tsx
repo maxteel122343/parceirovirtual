@@ -131,25 +131,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
     const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null);
     const [lastWarningTime, setLastWarningTime] = useState<Record<string, number>>({});
-    const [globalAIs, setGlobalAIs] = useState<PartnerProfile[]>([]);
-
-    // Fetch Global AIs from all users
-    useEffect(() => {
-        const fetchGlobalAIs = async () => {
-            const { data, error } = await supabase.from('profiles').select('ai_settings');
-            console.log("Global AIs fetch result:", data, error);
-            if (data) {
-                const allAIs: PartnerProfile[] = [];
-                data.forEach(p => {
-                    if (p.ai_settings && p.ai_settings.custom_ais && Array.isArray(p.ai_settings.custom_ais)) {
-                        allAIs.push(...p.ai_settings.custom_ais);
-                    }
-                });
-                setGlobalAIs(allAIs);
-            }
-        };
-        fetchGlobalAIs();
-    }, []);
 
     // Track User Location
     useEffect(() => {
@@ -311,15 +292,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         setIsValidating(true);
         try {
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if (response.ok) {
-                setApiStatus('valid');
-            } else {
-                const errorText = await response.text();
-                console.error("Erro na API do Gemini. Status:", response.status, "Detalhes:", errorText);
-                setApiStatus('invalid');
-            }
+            if (response.ok) setApiStatus('valid');
+            else setApiStatus('invalid');
         } catch (e) {
-            console.error("Erro de conexão ao verificar API:", e);
             setApiStatus('invalid');
         }
         setIsValidating(false);
@@ -516,8 +491,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
             ...prev,
             custom_ais: [...(prev.custom_ais || []), fullAi]
         }));
-        
-        setGlobalAIs(prev => [...prev, fullAi]);
 
         setShowCreateAiModal(false);
         setActiveTab('gallery');
@@ -1153,47 +1126,37 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                         </div>
                                     </div>
 
-                                    {/* Global AIs Cards */}
-                                    {globalAIs.map((ai, index) => (
+                                    {/* Custom AIs Cards */}
+                                    {profile.custom_ais?.map((ai, index) => (
                                         <div key={index} className={`group relative flex flex-col rounded-[2.5rem] overflow-hidden border-2 border-transparent hover:border-pink-600/30 transition-all duration-500 ${cardClasses} shadow-2xl h-[550px]`}>
                                             {/* Favorite Icon */}
-                                            {user && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const updated = [...(profile.custom_ais || [])];
-                                                        const existingIndex = updated.findIndex(u => u.name === ai.name);
-                                                        if (existingIndex >= 0) {
-                                                            updated[existingIndex] = { ...updated[existingIndex], isFavorite: !updated[existingIndex].isFavorite };
-                                                        } else {
-                                                            updated.push({ ...ai, isFavorite: true });
-                                                        }
-                                                        updateProfileAndSync(prev => ({ ...prev, custom_ais: updated }));
-                                                    }}
-                                                    className="absolute top-6 right-6 z-20 w-10 h-10 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-xl transition-all hover:scale-110 active:scale-90"
-                                                >
-                                                    {profile.custom_ais?.find(u => u.name === ai.name)?.isFavorite ? '❤️' : '🤍'}
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const updated = [...(profile.custom_ais || [])];
+                                                    updated[index] = { ...updated[index], isFavorite: !updated[index].isFavorite };
+                                                    updateProfileAndSync(prev => ({ ...prev, custom_ais: updated }));
+                                                }}
+                                                className="absolute top-6 right-6 z-20 w-10 h-10 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-xl transition-all hover:scale-110 active:scale-90"
+                                            >
+                                                {ai.isFavorite ? '❤️' : '🤍'}
+                                            </button>
 
                                             {/* Delete Icon */}
-                                            {user && profile.custom_ais?.some(u => u.name === ai.name) && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm("Deseja excluir este perfil?")) {
-                                                            updateProfileAndSync(prev => ({
-                                                                ...prev,
-                                                                custom_ais: prev.custom_ais?.filter(u => u.name !== ai.name)
-                                                            }));
-                                                            setGlobalAIs(prev => prev.filter(g => g.name !== ai.name));
-                                                        }
-                                                    }}
-                                                    className="absolute top-6 left-6 z-20 w-10 h-10 rounded-full bg-red-500/80 text-white backdrop-blur-md flex items-center justify-center text-lg hover:scale-110 active:scale-90 transition-all"
-                                                >
-                                                    🗑️
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm("Deseja excluir este perfil?")) {
+                                                        updateProfileAndSync(prev => ({
+                                                            ...prev,
+                                                            custom_ais: prev.custom_ais?.filter((_, i) => i !== index) || []
+                                                        }));
+                                                    }
+                                                }}
+                                                className="absolute top-6 left-6 z-20 w-10 h-10 rounded-full bg-red-500/10 text-red-500 backdrop-blur-md flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                                            >
+                                                ✕
+                                            </button>
 
                                             {/* Image Container */}
                                             <div className="relative h-2/3 overflow-hidden">

@@ -18,14 +18,11 @@ function decode(base64: string) {
 }
 
 async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
-    const data16 = new Int16Array(data.buffer);
-    const frameCount = data16.length / numChannels;
-    const audioBuffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-    for (let c = 0; c < numChannels; c++) {
-        const channelData = audioBuffer.getChannelData(c);
-        for (let i = 0; i < frameCount; i++) {
-            channelData[i] = data16[i * numChannels + c] / 32768.0;
-        }
+    const data16 = new Int16Array(data);
+    const audioBuffer = ctx.createBuffer(numChannels, data16.length, sampleRate);
+    const channelData = audioBuffer.getChannelData(0);
+    for (let i = 0; i < data16.length; i++) {
+        channelData[i] = data16[i] / 32768.0;
     }
     return audioBuffer;
 }
@@ -38,9 +35,7 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
 
     useEffect(() => {
         if (!apiKey || !profile.autoWelcomeEnabled) return;
-        // Remove sessionStorage check so that if the user refreshes (F5), it plays again.
-        if ((window as any)._welcomed) return;
-        (window as any)._welcomed = true;
+        if (sessionStorage.getItem('warm_welcomed') === 'true') return; // Already welcomed in this session
 
         let isMounted = true;
         let aiSession: any = null;
@@ -95,9 +90,9 @@ export const WelcomeVoiceManager: React.FC<WelcomeVoiceManagerProps> = ({ profil
                             sessionPromise.then(session => {
                                 aiSession = session;
                                 sessionRef.current = session;
-                                // Use send() instead of sendRealtimeInput to ensure turnComplete: true is sent
-                                // since there is no microphone audio stream to trigger the VAD.
-                                session.send("O usuário acabou de entrar no aplicativo. Dê as boas vindas rapidamente de forma calorosa.");
+                                session.sendRealtimeInput({
+                                    text: "O usuário acabou de entrar no aplicativo. Dê as boas vindas rapidamente de forma calorosa."
+                                });
                             });
                         },
                         onmessage: async (message: LiveServerMessage) => {
