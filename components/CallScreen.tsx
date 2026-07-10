@@ -1184,8 +1184,8 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
         </div>
       )}
 
-      <div className="flex-1 flex flex-col md:flex-row relative">
-        <div className={`flex-1 min-h-[40vh] md:min-h-0 relative transition-all ${isPink ? 'bg-pink-50/50' : isDark ? 'bg-black border-b md:border-b-0 md:border-r border-white/5 shadow-2xl z-10' : 'bg-slate-100 border-b md:border-b-0 md:border-r border-slate-200 shadow-inner'}`}>
+      <div className="flex-1 flex flex-col lg:flex-row relative">
+        <div className={`flex-1 min-h-[50vh] lg:min-h-0 relative transition-all ${isPink ? 'bg-pink-50/50' : isDark ? 'bg-black border-b lg:border-b-0 lg:border-r border-white/5 shadow-2xl z-10' : 'bg-slate-100 border-b lg:border-b-0 lg:border-r border-slate-200 shadow-inner'}`}>
           <video ref={videoRef} muted playsInline className="w-full h-full object-cover transform scale-x-[-1]" />
 
           {/* CC Indicator Badge (Bottom Right of Camera) */}
@@ -1217,7 +1217,7 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
           </div>
         </div>
 
-        <div ref={partnerVideoRef} className={`flex-1 min-h-[50vh] md:min-h-0 relative flex items-center justify-center overflow-hidden transition-all duration-500 ${isPink ? 'bg-[#fffafa]' : isDark ? 'bg-[#0b0c10]' : 'bg-[#eef2f7]'}`}>
+        <div ref={partnerVideoRef} className={`flex-1 min-h-[50vh] lg:min-h-0 relative flex items-center justify-center overflow-hidden transition-all duration-500 ${isPink ? 'bg-[#fffafa]' : isDark ? 'bg-[#0b0c10]' : 'bg-[#eef2f7]'}`}>
           {profile.image && (
             <div className={`absolute inset-0 opacity-30 blur-[120px] scale-150 z-0 ${isPink ? 'mix-blend-multiply' : ''}`} style={{ backgroundImage: `url(${profile.image})`, backgroundSize: 'cover' }} />
           )}
