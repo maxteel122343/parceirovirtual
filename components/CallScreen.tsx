@@ -961,15 +961,9 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           onclose: () => {
             console.log("WebSocket connection closed.");
             setIsConnected(false);
-            if (sessionRef.current) {
-              alert("A conexão com a IA foi encerrada ou bloqueada. Verifique as permissões da chave de API (Restrições de Aplicativo) no Google Cloud.");
-              onEndCall('error');
-            }
           },
           onerror: (err) => { 
             console.error(err); 
-            alert(`Erro na API: ${err.message || err.toString()}`); 
-            onEndCall('error'); 
           }
         }
       });
@@ -977,8 +971,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
     } catch (error: any) {
       console.error(error);
-      alert(`Erro local (microfone ou config): ${error.message || error.toString()}`);
-      onEndCall('error');
     }
   };
 
@@ -1272,7 +1264,7 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
       )}
 
       {/* Control Buttons Layer */}
-      <div className="absolute top-28 left-1/2 transform -translate-x-1/2 flex items-center gap-6 sm:gap-12 z-[100] pointer-events-auto">
+      <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 flex items-center gap-6 sm:gap-12 z-[100] pointer-events-auto">
         <button
           onClick={requestAdvice}
           className={`flex flex-col items-center gap-2 group transition-all`}
