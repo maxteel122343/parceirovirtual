@@ -323,7 +323,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         setIsValidating(true);
         try {
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if (response.ok) setApiStatus('valid');
+            if (response.ok) {
+                setApiStatus('valid');
+                localStorage.setItem('GEMINI_API_KEY', key);
+            }
             else setApiStatus('invalid');
         } catch (e) {
             setApiStatus('invalid');

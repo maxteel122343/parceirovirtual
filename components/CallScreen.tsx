@@ -294,7 +294,11 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: { width: 640, height: 480 }
+        video: { 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
       });
       mediaStreamRef.current = stream;
 

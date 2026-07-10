@@ -50,7 +50,10 @@ export const HumanCallScreen: React.FC<HumanCallScreenProps> = ({
             // 1. Get microphone
             let stream: MediaStream;
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                  audio: true, 
+                  video: { facingMode: 'user' } 
+                });
             } catch {
                 alert('Sem permissão de microfone');
                 onEnd();
