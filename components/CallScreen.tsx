@@ -326,14 +326,20 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       const outputNode = outputAudioContextRef.current.createGain();
       outputNode.gain.value = 1.0;
 
-      // 1. FETCH MEMORY
+      // 1. FETCH MEMORY (parallel for speed)
       let memoryContext = "";
       if (user) {
-        const { data: topics } = await supabase.from('topics').select('*').eq('user_id', user.id).eq('status', 'active');
-        const { data: psych } = await supabase.from('user_profile_analysis').select('*').eq('user_id', user.id).single();
-        const { data: ai_profile } = await supabase.from('ai_profiles').select('*').eq('user_id', user.id).single();
+        const [topicsRes, psychRes, aiProfileRes, diaryRes] = await Promise.all([
+          supabase.from('topics').select('*').eq('user_id', user.id).eq('status', 'active'),
+          supabase.from('user_profile_analysis').select('*').eq('user_id', user.id).single(),
+          supabase.from('ai_profiles').select('*').eq('user_id', user.id).single(),
+          supabase.from('reminders').select('*').eq('owner_id', profile.originalPartnerId || user.id).eq('is_completed', false).order('trigger_at', { ascending: true })
+        ]);
+        const topics = topicsRes.data;
+        const psych = psychRes.data;
+        const ai_profile = aiProfileRes.data;
+        const diary = diaryRes.data;
         const targetOwnerId = profile.originalPartnerId || user.id;
-        const { data: diary } = await supabase.from('reminders').select('*').eq('owner_id', targetOwnerId).eq('is_completed', false).order('trigger_at', { ascending: true });
 
         let strangerCallCount = 0;
         if (profile.callerInfo?.isPartner === false && profile.callerInfo?.id) {
@@ -595,6 +601,15 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+              endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+              prefixPaddingMs: 20,
+              silenceDurationMs: 500,
+            }
+          },
           tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool] }],
         }
       };
