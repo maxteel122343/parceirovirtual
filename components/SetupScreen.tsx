@@ -136,7 +136,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
     // Fetch Global AIs from all users
     useEffect(() => {
         const fetchGlobalAIs = async () => {
-            const { data } = await supabase.from('profiles').select('ai_settings');
+            const { data, error } = await supabase.from('profiles').select('ai_settings');
+            console.log("Global AIs fetch result:", data, error);
             if (data) {
                 const allAIs: PartnerProfile[] = [];
                 data.forEach(p => {
@@ -310,9 +311,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         setIsValidating(true);
         try {
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if (response.ok) setApiStatus('valid');
-            else setApiStatus('invalid');
+            if (response.ok) {
+                setApiStatus('valid');
+            } else {
+                const errorText = await response.text();
+                console.error("Erro na API do Gemini. Status:", response.status, "Detalhes:", errorText);
+                setApiStatus('invalid');
+            }
         } catch (e) {
+            console.error("Erro de conexão ao verificar API:", e);
             setApiStatus('invalid');
         }
         setIsValidating(false);
