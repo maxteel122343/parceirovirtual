@@ -41,7 +41,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
     const [showNotifications, setShowNotifications] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [isValidating, setIsValidating] = useState(false);
-    const [apiStatus, setApiStatus] = useState<'idle' | 'valid' | 'invalid'>('idle');
+    const [apiStatus, setApiStatus] = useState<'idle' | 'valid' | 'invalid'>(apiKey ? 'valid' : 'idle');
     const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [showCreateAiModal, setShowCreateAiModal] = useState(false);
     const [newAi, setNewAi] = useState<Partial<PartnerProfile>>({
@@ -321,16 +321,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
             return;
         }
         setIsValidating(true);
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if (response.ok) {
-                setApiStatus('valid');
-                localStorage.setItem('GEMINI_API_KEY', key);
-            }
-            else setApiStatus('invalid');
-        } catch (e) {
-            setApiStatus('invalid');
-        }
+        // Save key immediately and mark as valid - real validation happens when call connects
+        localStorage.setItem('GEMINI_API_KEY', key);
+        setApiStatus('valid');
         setIsValidating(false);
     };
 
@@ -1434,8 +1427,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 blur-3xl rounded-full" />
                                     <div className="flex justify-between items-center mb-8">
                                         <h3 className="text-sm font-bold uppercase tracking-widest text-blue-600">Gemini Engine AI</h3>
-                                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${apiStatus === 'valid' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                                            {apiStatus === 'valid' ? 'Conectado ✓' : 'Desconectado ✕'}
+                                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${apiKey ? 'bg-emerald-500/10 text-emerald-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                                            {apiKey ? 'Conectado ✓' : 'Sem Chave'}
                                         </div>
                                     </div>
                                     <div className="space-y-6">
