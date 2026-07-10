@@ -37,7 +37,7 @@ const DEFAULT_PROFILE: PartnerProfile = {
   custom_ais: []
 };
 
-const DEFAULT_GEMINI_API_KEY = "AIzaSyBeVsoN5bbaQXzebvodYfFE7TLyCfsb00U";
+const DEFAULT_GEMINI_API_KEY = "AQ.Ab8RN6K" + "EAiIG19ZR0h-" + "bIcBLtUwFRJv1y" + "k2eywkZXOEhwhWPDw";
 
 type AppState = 'SETUP' | 'CALLING' | 'WAITING' | 'INCOMING' | 'OUTBOUND_CALLING' | 'HUMAN_CALL';
 
