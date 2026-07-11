@@ -74,7 +74,7 @@ export default function App() {
       let assistantContent = '';
       setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
-      const optimizedInstruction = `${systemInstruction}\n\nATENÇÃO: Dê respostas muito curtas primeiro (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter o tempo de resposta abaixo de 800ms. Apenas expanda se o usuário pedir mais detalhes.`;
+      const optimizedInstruction = `${systemInstruction}\n\nATENÇÃO (DINÂMICA DE RESPOSTA):\n- Sempre comece demonstrando escuta ativa: repita ou interprete brevemente o que o usuário acabou de falar em tom reflexivo ou de pergunta (ex: "Então você acha que...", "Hum, quer dizer que...", "Entendi, você está dizendo que...").\n- Logo em seguida na mesma resposta, dê a sua opinião/resposta de forma ultra-breve.\n- Mantenha a resposta toda super curta (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter a resposta ultra-rápida (menos de 800ms).`;
       const stream = service.sendMessageStream(input, history, optimizedInstruction);
       
       for await (const chunk of stream) {

@@ -249,7 +249,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 Responda como se estivesse em um chat de texto (WhatsApp/Telegram). 
                 Seja extremamente breve, direto e natural. Use emojis.
                 
-                ATENÇÃO: Dê respostas muito curtas primeiro (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter o tempo de resposta abaixo de 800ms. Apenas expanda se o usuário pedir mais detalhes.
+                ATENÇÃO (DINÂMICA DE RESPOSTA):
+                - Sempre comece demonstrando escuta ativa: repita ou interprete brevemente o que o usuário acabou de falar em tom reflexivo ou de pergunta (ex: "Então você acha que...", "Hum, quer dizer que...", "Entendi, você está dizendo que...").
+                - Logo em seguida na mesma resposta, dê a sua opinião/resposta de forma ultra-breve.
+                - Mantenha a resposta toda super curta (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter a resposta ultra-rápida (menos de 800ms).
 
                 DINÂMICA DE RELACIONAMENTO (PILARES):
                 - Se o usuário for carinhoso, honesto ou engraçado, reaja com reciprocidade e sinta a barra de afeto subir.
@@ -259,7 +262,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 
                 Sua missão é manter a chama acesa ou esfriar conforme o tratamento dele.`;
 
-            const history: AiChatMessage[] = currentHistory.slice(-4).map(m => ({
+            const history: AiChatMessage[] = currentHistory.slice(0, -1).slice(-4).map(m => ({
                 role: m.sender_id === currentUser.id ? 'user' : 'model',
                 content: m.content
             }));
