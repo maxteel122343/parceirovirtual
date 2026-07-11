@@ -69,6 +69,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   // Audio Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputGainNodeRef = useRef<GainNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Analyser Refs
@@ -348,6 +349,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const outputNode = outputAudioContextRef.current.createGain();
       outputNode.gain.value = 1.0;
+      outputGainNodeRef.current = outputNode;
 
       // 1. FETCH MEMORY
       let memoryContext = "";
@@ -995,9 +997,31 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               }
             }
             if (message.serverContent?.interrupted) {
-              sourcesRef.current.forEach(s => s.stop());
-              sourcesRef.current.clear();
-              nextStartTimeRef.current = 0;
+              const ctx = outputAudioContextRef.current;
+              const gainNode = outputGainNodeRef.current;
+
+              if (ctx && gainNode) {
+                const now = ctx.currentTime;
+                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+                // Rampa exponencial rápida de 80ms para silenciar o áudio sem dar estalos/bufadas
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+                setTimeout(() => {
+                  sourcesRef.current.forEach(s => {
+                    try { s.stop(); } catch (e) {}
+                  });
+                  sourcesRef.current.clear();
+                  nextStartTimeRef.current = 0;
+                  // Restaura o volume para o valor original após parar as fontes
+                  gainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+                }, 80);
+              } else {
+                sourcesRef.current.forEach(s => {
+                  try { s.stop(); } catch (e) {}
+                });
+                sourcesRef.current.clear();
+                nextStartTimeRef.current = 0;
+              }
 
               // Save what we have before clearing
               if (captionBufferRef.current.trim() && conversationIdRef.current) {
