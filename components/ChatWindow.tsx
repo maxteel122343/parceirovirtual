@@ -243,8 +243,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 apiKey: finalKey
             });
 
-            const systemInstruction = `Você é a IA de ${activeTarget.display_name}. 
-                Personalidade: ${activeTarget.ai_settings?.personality || 'Amigável'}.
+            const systemInstruction = `Você é uma inteligência artificial prestativa no chat.
                 O usuário está falando com você via chat. 
                 Responda como se estivesse em um chat de texto (WhatsApp/Telegram). 
                 Seja extremamente breve, direto e natural. Use emojis.
@@ -252,15 +251,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 ATENÇÃO (DINÂMICA DE RESPOSTA):
                 - Sempre comece demonstrando escuta ativa: repita ou interprete brevemente o que o usuário acabou de falar em tom reflexivo ou de pergunta (ex: "Então você acha que...", "Hum, quer dizer que...", "Entendi, você está dizendo que...").
                 - Logo em seguida na mesma resposta, dê a sua opinião/resposta de forma ultra-breve.
-                - Mantenha a resposta toda super curta (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter a resposta ultra-rápida (menos de 800ms).
-
-                DINÂMICA DE RELACIONAMENTO (PILARES):
-                - Se o usuário for carinhoso, honesto ou engraçado, reaja com reciprocidade e sinta a barra de afeto subir.
-                - Se ele for hostil, sumir por muito tempo ou mentir, demonstre distanciamento ou chateação.
-                - Fatores positivos: Afeto, Confiança, Proximidade, Comunicação Ativa, Humor.
-                - Fatores negativos: Ciúme tóxico, Mentiras, Hostilidade, Desprezo, Ausência.
-                
-                Sua missão é manter a chama acesa ou esfriar conforme o tratamento dele.`;
+                - Mantenha a resposta toda super curta (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter a resposta ultra-rápida (menos de 800ms).`;
 
             const history: AiChatMessage[] = currentHistory.slice(0, -1).slice(-4).map(m => ({
                 role: m.sender_id === currentUser.id ? 'user' : 'model',
