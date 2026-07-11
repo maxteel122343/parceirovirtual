@@ -839,7 +839,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 await outputAudioContextRef.current.resume();
               }
 
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContextRef.current.currentTime);
+              const curTime = outputAudioContextRef.current.currentTime;
+              if (nextStartTimeRef.current < curTime + 0.05) {
+                // Se estamos iniciando ou houve um atraso (gap), adicione um buffer de lookahead de 150ms
+                nextStartTimeRef.current = curTime + 0.15;
+              }
               const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContextRef.current, 24000, 1);
 
               const source = outputAudioContextRef.current.createBufferSource();
