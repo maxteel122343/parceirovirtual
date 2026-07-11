@@ -94,6 +94,13 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const isSpeakingRef = useRef<boolean>(false);
   const systemInstructionRef = useRef<string>("");
 
+  // VAD + MediaRecorder fallback (when SpeechRecognition fails)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const vadActiveRef = useRef<boolean>(false);      // true = user is currently speaking
+  const vadSilenceTimerRef = useRef<any>(null);     // fires after silence to submit audio
+  const speechRecognitionWorkingRef = useRef<boolean>(false); // tracks if webkitSR got a result
+
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
 
@@ -395,7 +402,9 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     }
   };
 
-  const handleUserSpeech = async (text: string) => {
+  const handleUserSpeech = async (rawText: string) => {
+    // Strip internal [VAD] prefix used by the MediaRecorder fallback
+    const text = rawText.startsWith('[VAD] ') ? rawText.slice(6) : rawText;
     if (!text.trim() || !isConnectedRef.current) return;
     
     stopSpeechRecognition();
@@ -524,8 +533,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
       }
 
-      // Request ONLY video from getUserMedia — SpeechRecognition gets exclusive mic access
-      // (on PC, getUserMedia({audio:true}) blocks SpeechRecognition from capturing the mic)
+      // Request audio (required) separately from video (optional)
+      // This prevents mobile camera failures from breaking the entire call
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
       let videoStream: MediaStream | null = null;
       try {
         videoStream = await navigator.mediaDevices.getUserMedia({
@@ -536,10 +547,15 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
           }
         });
       } catch (videoErr) {
-        console.warn('Camera not available, continuing without video:', videoErr);
+        console.warn('Camera not available, continuing with audio only:', videoErr);
       }
 
-      const stream = videoStream || new MediaStream();
+      // Merge audio + video tracks into one stream
+      const combinedTracks = [
+        ...audioStream.getTracks(),
+        ...(videoStream ? videoStream.getTracks() : [])
+      ];
+      const stream = new MediaStream(combinedTracks);
       mediaStreamRef.current = stream;
 
       if (videoRef.current && videoStream) {
@@ -841,9 +857,114 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         outputAudioContextRef.current.resume();
       }
 
-      // Mic level visualization: animate based on listening/speaking state
-      // (Real audio metering removed — mic is exclusively owned by SpeechRecognition)
-      setMicLevel(0);
+      // Setup VAD MediaRecorder fallback using the microphone stream
+      const setupVADFallback = (micStream: MediaStream) => {
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+        const recorder = new MediaRecorder(micStream, { mimeType });
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+          const chunks = audioChunksRef.current;
+          audioChunksRef.current = [];
+          if (chunks.length === 0 || !isConnectedRef.current || isSpeakingRef.current) return;
+
+          const blob = new Blob(chunks, { type: mimeType });
+          if (blob.size < 5000) return; // Skip tiny/empty recordings
+
+          // Convert blob to base64 and send to Gemini
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64 = (reader.result as string).split(',')[1];
+            if (!base64) return;
+
+            const userAudioPart = {
+              inlineData: { mimeType, data: base64 }
+            };
+
+            const updatedHistory = [
+              ...historyRef.current,
+              { role: 'user' as const, parts: [{ text: '[áudio do usuário]' }] }
+            ];
+
+            // Use Gemini with audio input to transcribe + generate response
+            try {
+              const ai = new GoogleGenAI({ apiKey });
+              const transcribeResp = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                  ...historyRef.current.map(h => ({ role: h.role, parts: h.parts })),
+                  { role: 'user', parts: [userAudioPart as any] }
+                ],
+                config: { systemInstruction: systemInstructionRef.current }
+              });
+              const spokenText = transcribeResp.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (spokenText && spokenText.trim()) {
+                await handleUserSpeech('[VAD] ' + spokenText.trim());
+              }
+            } catch (e) {
+              console.warn('VAD Gemini audio fallback failed:', e);
+            }
+          };
+          reader.readAsDataURL(blob);
+        };
+      };
+
+      if (inputAudioContextRef.current && stream && userAnalyserRef.current) {
+        const source = inputAudioContextRef.current.createMediaStreamSource(stream);
+        const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+        source.connect(userAnalyserRef.current);
+        userAnalyserRef.current.connect(scriptProcessor);
+        scriptProcessor.connect(inputAudioContextRef.current.destination);
+
+        const VAD_THRESHOLD = 0.015;   // RMS level to consider as speech
+        const SILENCE_DELAY_MS = 1800; // ms of silence before submitting
+
+        setupVADFallback(stream);
+
+        scriptProcessor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0);
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+          const rms = Math.sqrt(sum / inputData.length);
+          setMicLevel(rms);
+
+          // VAD fallback: only activate when SpeechRecognition hasn't gotten results
+          // and AI is not currently speaking
+          if (isSpeakingRef.current || speechRecognitionWorkingRef.current) return;
+
+          if (rms > VAD_THRESHOLD) {
+            // User is speaking
+            if (!vadActiveRef.current) {
+              vadActiveRef.current = true;
+              audioChunksRef.current = [];
+              try {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+                  mediaRecorderRef.current.start(100); // collect chunks every 100ms
+                }
+              } catch (e) {}
+            }
+            // Reset silence timer
+            if (vadSilenceTimerRef.current) clearTimeout(vadSilenceTimerRef.current);
+            vadSilenceTimerRef.current = setTimeout(() => {
+              if (vadActiveRef.current) {
+                vadActiveRef.current = false;
+                try {
+                  if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                  }
+                } catch (e) {}
+              }
+            }, SILENCE_DELAY_MS);
+          }
+        };
+      }
 
       // Initialize browser Speech Recognition
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -873,6 +994,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         rec.onresult = (event: any) => {
           const text = event.results[0][0].transcript;
           if (text && text.trim().length > 0) {
+            speechRecognitionWorkingRef.current = true; // SR works — disable VAD fallback
             handleUserSpeech(text);
           }
         };
