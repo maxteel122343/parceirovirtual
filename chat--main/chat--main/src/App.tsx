@@ -69,12 +69,13 @@ export default function App() {
         apiKey: customApiKey || undefined,
       });
 
-      const history = messages.slice(-10); // Keep last 10 messages for context
+      const history = messages.slice(-4); // Keep last 4 messages for context to optimize latency
       
       let assistantContent = '';
       setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
-      const stream = service.sendMessageStream(input, history, systemInstruction);
+      const optimizedInstruction = `${systemInstruction}\n\nATENÇÃO: Dê respostas muito curtas primeiro (máximo 1-2 frases curtas, idealmente menos de 15 palavras) para manter o tempo de resposta abaixo de 800ms. Apenas expanda se o usuário pedir mais detalhes.`;
+      const stream = service.sendMessageStream(input, history, optimizedInstruction);
       
       for await (const chunk of stream) {
         assistantContent += chunk;

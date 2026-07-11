@@ -20,7 +20,7 @@ const DEFAULT_PROFILE: PartnerProfile = {
   theme: 'light',
   relationshipScore: 70,
   history: [],
-  language: PlatformLanguage.PT,
+  language: PlatformLanguage.EN,
   gender: 'Feminino',
   sexuality: 'Heterosexual',
   bestFriend: 'Meu Humano',
@@ -33,7 +33,7 @@ const DEFAULT_PROFILE: PartnerProfile = {
   isAiReceptionistEnabled: false,
   ai_number: '',
   captionsEnabled: false,
-  captionLanguage: PlatformLanguage.PT,
+  captionLanguage: PlatformLanguage.EN,
   custom_ais: []
 };
 

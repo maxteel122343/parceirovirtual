@@ -1,13 +1,13 @@
 export enum Mood {
-  LOVE = 'Apaixonado',
-  JEALOUS = 'Ciumento',
-  SARCASTIC = 'Sarcástico',
-  FUNNY = 'Engraçado',
-  DRAMATIC = 'Dramático',
-  INTELLECTUAL = 'Intelectual',
-  COUNSELOR = 'Conselheiro',
-  COLD = 'Frio/Distante',
-  CHAOTIC = 'Caótico'
+  LOVE = 'In Love',
+  JEALOUS = 'Jealous',
+  SARCASTIC = 'Sarcastic',
+  FUNNY = 'Funny',
+  DRAMATIC = 'Dramatic',
+  INTELLECTUAL = 'Intellectual',
+  COUNSELOR = 'Counselor',
+  COLD = 'Cold/Distant',
+  CHAOTIC = 'Chaotic'
 }
 
 export enum VoiceName {
@@ -31,21 +31,21 @@ export enum Accent {
 }
 
 export const ACCENT_META: Record<Accent, { label: string; flagUrl: string; desc: string }> = {
-  [Accent.PAULISTA]: { label: 'São Paulo', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/2b/Bandeira_do_estado_de_S%C3%A3o_Paulo.svg', desc: '"Meu", "Mano", gírias urbanas.' },
-  [Accent.CARIOCA]: { label: 'Rio de Janeiro', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/73/Bandeira_do_estado_do_Rio_de_Janeiro.svg', desc: 'Sotaque chiado, "Mermão".' },
-  [Accent.BAIANO]: { label: 'Bahia', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/28/Bandeira_da_Bahia.svg', desc: 'Ritmo cantado, "Oxe", "Pai".' },
-  [Accent.MINEIRO]: { label: 'Minas Gerais', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f4/Bandeira_de_Minas_Gerais.svg', desc: '"Uai", "Trem", diminutivos.' },
-  [Accent.GAUCHO]: { label: 'Rio Grande do Sul', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/63/Bandeira_do_Rio_Grande_do_Sul.svg', desc: '"Bah", "Tchê", conjugação tu.' },
+  [Accent.PAULISTA]: { label: 'São Paulo', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/2b/Bandeira_do_estado_do_S%C3%A3o_Paulo.svg', desc: '"Meu", "Mano", urban slang.' },
+  [Accent.CARIOCA]: { label: 'Rio de Janeiro', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/73/Bandeira_do_estado_do_Rio_de_Janeiro.svg', desc: 'Squeaky accent, "Mermão".' },
+  [Accent.BAIANO]: { label: 'Bahia', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/28/Bandeira_da_Bahia.svg', desc: 'Chanted rhythm, "Oxe", "Pai".' },
+  [Accent.MINEIRO]: { label: 'Minas Gerais', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f4/Bandeira_de_Minas_Gerais.svg', desc: '"Uai", "Trem", diminutives.' },
+  [Accent.GAUCHO]: { label: 'Rio Grande do Sul', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/63/Bandeira_do_Rio_Grande_do_Sul.svg', desc: '"Bah", "Tchê", "tu" conjugation.' },
   [Accent.CEARENSE]: { label: 'Ceará', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/2/2e/Bandeira_do_Cear%C3%A1.svg', desc: '"Macho", "Arretado".' },
-  [Accent.PERNAMBUCANO]: { label: 'Pernambuco', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/59/Bandeira_de_Pernambuco.svg', desc: 'Sotaque forte e rápido.' },
+  [Accent.PERNAMBUCANO]: { label: 'Pernambuco', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/59/Bandeira_de_Pernambuco.svg', desc: 'Strong and fast accent.' },
   [Accent.MANAUARA]: { label: 'Amazonas', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/6/6b/Bandeira_do_Amazonas.svg', desc: '"Mano", "Chibata".' },
-  [Accent.NEUTRO]: { label: 'Padrão', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/0/05/Flag_of_Brazil.svg', desc: 'Português padrão.' },
+  [Accent.NEUTRO]: { label: 'Standard', flagUrl: 'https://upload.wikimedia.org/wikipedia/commons/0/05/Flag_of_Brazil.svg', desc: 'Standard Portuguese.' },
 };
 
 export enum CallbackIntensity {
-  LOW = 'Baixa (Independente)',
-  MEDIUM = 'Média (Atencioso)',
-  HIGH = 'Alta (Obsessivo/Grudento)'
+  LOW = 'Low (Independent)',
+  MEDIUM = 'Medium (Attentive)',
+  HIGH = 'High (Obsessive/Clingy)'
 }
 
 export type Theme = 'dark' | 'light' | 'pink';
