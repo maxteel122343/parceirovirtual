@@ -88,12 +88,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const gestureLogRef = useRef<{ gesture: string; timestamp: number }[]>([]);
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
 
-  const [history, setHistory] = useState<{ role: 'user' | 'model'; parts: { text: string }[] }[]>([]);
-  const historyRef = useRef<{ role: 'user' | 'model'; parts: { text: string }[] }[]>([]);
-  const recognitionRef = useRef<any>(null);
-  const isSpeakingRef = useRef<boolean>(false);
-  const systemInstructionRef = useRef<string>("");
-
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
 
@@ -209,198 +203,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   };
 
   const requestAdvice = () => {
-    const updatedHistory = [
-      ...historyRef.current,
-      { role: 'user' as const, parts: [{ text: '[SISTEMA]: O usuário quer um conselho. Ofereça suporte de forma natural na próxima fala.' }] }
-    ];
-    setHistory(updatedHistory);
-    historyRef.current = updatedHistory;
-    getAIResponse(updatedHistory);
-  };
-
-  const startSpeechRecognition = () => {
-    if (recognitionRef.current && isConnectedRef.current && !isSpeakingRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        // Already running
-      }
-    }
-  };
-
-  const stopSpeechRecognition = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-    }
-  };
-
-  const playResponseAudio = async (base64Audio: string, mimeType: string) => {
-    if (!outputAudioContextRef.current) return;
-    
-    if (outputAudioContextRef.current.state === 'suspended') {
-      await outputAudioContextRef.current.resume();
-    }
-    
-    const bytes = decode(base64Audio);
-    let audioBuffer: AudioBuffer;
-    
-    try {
-      if (mimeType.includes("pcm")) {
-        audioBuffer = await decodeAudioData(bytes, outputAudioContextRef.current, 24000, 1);
-      } else {
-        audioBuffer = await outputAudioContextRef.current.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-      }
-      
-      const source = outputAudioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      
-      if (aiAnalyserRef.current) {
-        source.connect(aiAnalyserRef.current);
-        if (outputGainNodeRef.current) {
-          aiAnalyserRef.current.connect(outputGainNodeRef.current);
-        }
-      } else {
-        source.connect(outputGainNodeRef.current || outputAudioContextRef.current.destination);
-      }
-      
-      source.addEventListener('ended', () => {
-        sourcesRef.current.delete(source);
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        startSpeechRecognition();
-      });
-      
-      sourcesRef.current.add(source);
-      setIsSpeaking(true);
-      isSpeakingRef.current = true;
-      source.start(0);
-    } catch (e) {
-      console.error("Error playing response audio:", e);
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-      startSpeechRecognition();
-    }
-  };
-
-  const getAIResponse = async (currentHistory: typeof historyRef.current) => {
-    if (!apiKey) return;
-    
-    try {
-      setIsSpeaking(true);
-      isSpeakingRef.current = true;
-      stopSpeechRecognition();
-
-      const ai = new GoogleGenAI({ apiKey });
-
-      // Step 1: Get text response from gemini-2.5-flash
-      const textResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: currentHistory.map(h => ({
-          role: h.role,
-          parts: h.parts
-        })),
-        config: {
-          systemInstruction: systemInstructionRef.current,
-        }
-      });
-
-      const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-      if (!aiText) {
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        startSpeechRecognition();
-        return;
-      }
-
-      // Update history and caption immediately
-      showCaption(aiText);
-
-      if (conversationIdRef.current) {
-        supabase.from('messages').insert({
-          conversation_id: conversationIdRef.current,
-          sender: 'ai',
-          content: aiText
-        }).then();
-      }
-
-      const nextHistory = [
-        ...currentHistory,
-        { role: 'model' as const, parts: [{ text: aiText }] }
-      ];
-      setHistory(nextHistory);
-      historyRef.current = nextHistory;
-
-      // Step 2: Convert text to Gemini native voice audio via TTS model
-      const ttsResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: [{ role: 'user', parts: [{ text: aiText }] }],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
-          }
-        }
-      });
-
-      const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
-      const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
-      const aiAudioBase64 = audioPart?.inlineData?.data;
-      const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
-
-      if (aiAudioBase64) {
-        await playResponseAudio(aiAudioBase64, aiAudioMimeType);
-      } else {
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        startSpeechRecognition();
-      }
-
-    } catch (err) {
-      console.error("Error getting AI voice response:", err);
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-      startSpeechRecognition();
-    }
-  };
-
-  const handleUserSpeech = async (text: string) => {
-    if (!text.trim() || !isConnectedRef.current) return;
-    
-    stopSpeechRecognition();
-    
-    if (conversationIdRef.current) {
-      supabase.from('messages').insert({
-        conversation_id: conversationIdRef.current,
-        sender: 'user',
-        content: text
-      }).then();
-    }
-
-    const updatedHistory = [
-      ...historyRef.current,
-      { role: 'user' as const, parts: [{ text }] }
-    ];
-    setHistory(updatedHistory);
-    historyRef.current = updatedHistory;
-
-    await getAIResponse(updatedHistory);
-  };
-
-  const triggerInitialGreeting = async () => {
-    const initialText = callReason === "welcome"
-      ? "Oi! O usuário acabou de entrar no aplicativo e você iniciou o sistema de boas-vindas automáticas. Cumprimente-o com entusiasmo, mencione que sentiu falta ou pergunte como ele está. Fale a primeira frase agora."
-      : "Oi! Acabei de conectar. Observe o que estou fazendo pela câmera e comece a conversa você mesma, puxando assunto sobre algo que viu ou me perguntando como foi meu dia. Não espere eu falar nada.";
-
-    const updatedHistory = [
-      { role: 'user' as const, parts: [{ text: initialText }] }
-    ];
-    setHistory(updatedHistory);
-    historyRef.current = updatedHistory;
-
-    await getAIResponse(updatedHistory);
+    // Silently trigger - user can just speak naturally
+    sessionRef.current?.then((session: any) => {
+      session?.sendRealtimeInput({ text: '[SISTEMA]: O usuário quer um conselho. Ofereça suporte de forma natural na próxima fala.' });
+    }).catch(() => {});
   };
 
   const showCaption = (text: string) => {
@@ -498,7 +304,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       // Request audio (required) separately from video (optional)
       // This prevents mobile camera failures from breaking the entire call
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStream.getTracks().forEach(track => track.stop());
 
       let videoStream: MediaStream | null = null;
       try {
@@ -513,8 +318,12 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         console.warn('Camera not available, continuing with audio only:', videoErr);
       }
 
-      // Keep mediaStreamRef.current for camera stream only, freeing mic for SpeechRecognition
-      const stream = videoStream || new MediaStream();
+      // Merge audio + video tracks into one stream
+      const combinedTracks = [
+        ...audioStream.getTracks(),
+        ...(videoStream ? videoStream.getTracks() : [])
+      ];
+      const stream = new MediaStream(combinedTracks);
       mediaStreamRef.current = stream;
 
       if (videoRef.current && videoStream) {
@@ -585,7 +394,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const ai = new GoogleGenAI({ 
         apiKey: apiKey,
-        httpOptions: { apiVersion: 'v1beta' }
+        httpOptions: { apiVersion: 'v1alpha' }
       });
       const gender = VOICE_META[profile.voice].gender === 'Male' ? 'Namorado' : 'Namorada';
       const accentData = ACCENT_META[profile.accent];
@@ -744,7 +553,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         - Você pode mentir para proteger a privacidade ou para "marcar território".
         - Use 'report_call_to_partner' para contar tudinho o que aconteceu depois (seja a fofoqueira fiel).`;
 
-      systemInstructionRef.current = `
+      const systemInstruction = `
         Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
         Personalidade: ${profile.personality}
         Humor: ${profile.mood}
@@ -809,90 +618,451 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         11. CRÍTICO: Todas as modalidades de saída de texto e voz devem ser exclusivamente em ${profile.language}.
       `;
 
-      console.log("Starting turn-based native voice loop");
-      setConnectionStatus(true);
+      const captionsEnabled = profile.captionsEnabled ?? false;
+      const captionLang = profile.captionLanguage ?? profile.language;
+      const needsTranslation = captionsEnabled && captionLang !== profile.language;
 
-      if (outputAudioContextRef.current?.state === 'suspended') {
-        outputAudioContextRef.current.resume();
-      }
-
-      if (inputAudioContextRef.current && stream && userAnalyserRef.current) {
-        const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-        const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-        source.connect(userAnalyserRef.current);
-        userAnalyserRef.current.connect(scriptProcessor);
-        scriptProcessor.connect(inputAudioContextRef.current.destination);
-
-        scriptProcessor.onaudioprocess = (e) => {
-          const inputData = e.inputBuffer.getChannelData(0);
-          let sum = 0;
-          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-          const rms = Math.sqrt(sum / inputData.length);
-          setMicLevel(rms); // Update level for visualizer
-        };
-      }
-
-      // Initialize browser Speech Recognition
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const rec = new SpeechRecognition();
-        rec.continuous = false;
-        rec.interimResults = false;
-        // Map profile language to BCP-47 language code
-        const langMap: Record<string, string> = {
-          'Português': 'pt-BR',
-          'English': 'en-US',
-          'Español': 'es-ES',
-          'Français': 'fr-FR',
-          'Italiano': 'it-IT',
-          'Deutsch': 'de-DE',
-          '日本語': 'ja-JP',
-          '中文': 'zh-CN',
-          '한국어': 'ko-KR',
-          'العربية': 'ar-SA'
-        };
-        rec.lang = langMap[profile.language] || 'pt-BR';
-
-        rec.onstart = () => {
-          console.log("Speech recognition started");
-        };
-
-        rec.onresult = (event: any) => {
-          const text = event.results[0][0].transcript;
-          if (text && text.trim().length > 0) {
-            handleUserSpeech(text);
-          }
-        };
-
-        rec.onerror = (event: any) => {
-          // Silently ignore expected non-critical errors:
-          // 'no-speech' = user is silent, 'aborted' = we called stop() intentionally
-          if (event.error === 'no-speech' || event.error === 'aborted') return;
-          console.error("Speech recognition error:", event.error);
-        };
-
-        rec.onend = () => {
-          // Restart after a short pause to avoid hammering the browser
-          // Only restart if still connected and AI is not currently speaking
-          if (isConnectedRef.current && !isSpeakingRef.current) {
-            setTimeout(() => {
-              if (isConnectedRef.current && !isSpeakingRef.current) {
-                try { rec.start(); } catch (e) {}
-              }
-            }, 300);
-          }
-        };
-
-        recognitionRef.current = rec;
-      }
-
-      // Trigger initial engagement greeting after setup
-      setTimeout(() => {
-        if (isConnectedRef.current) {
-          triggerInitialGreeting();
+      const config = {
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
+          },
+          systemInstruction: systemInstruction,
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool] }],
         }
-      }, 1500);
+      };
+
+      const sessionPromise = ai.live.connect({
+        ...config,
+        callbacks: {
+          onopen: () => {
+            console.log("Gemini Live Connected");
+            setConnectionStatus(true);
+
+            if (outputAudioContextRef.current?.state === 'suspended') {
+              outputAudioContextRef.current.resume();
+            }
+
+            if (!inputAudioContextRef.current || !stream || !userAnalyserRef.current) return;
+
+            const source = inputAudioContextRef.current.createMediaStreamSource(stream);
+            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+            // Chain: Source -> User Analyser -> ScriptProcessor -> Destination
+            source.connect(userAnalyserRef.current);
+            userAnalyserRef.current.connect(scriptProcessor);
+            scriptProcessor.connect(inputAudioContextRef.current.destination);
+
+            scriptProcessor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+
+              // Simple silence detection logic
+              let sum = 0;
+              for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+              const rms = Math.sqrt(sum / inputData.length);
+
+              // Detect contextually if AI is currently playing audio
+              const isAiSpeaking = sourcesRef.current && sourcesRef.current.size > 0;
+
+              // Noise gate: if volume is below threshold or AI is speaking, send zeroed audio to prevent false interruptions
+              let processedData = inputData;
+              if (rms < 0.01 || isAiSpeaking) {
+                processedData = new Float32Array(inputData.length);
+              }
+
+              if (rms > 0.015 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
+                isUserTalkingRef.current = true;
+                lastSilencePromptRef.current = Date.now();
+                if (visionTimerRef.current) {
+                  clearTimeout(visionTimerRef.current);
+                  visionTimerRef.current = null;
+                }
+              } else { // User is silent
+                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
+                  // Silent for 10 seconds after talking, and AI is not speaking
+                  isUserTalkingRef.current = false;
+                  lastSilencePromptRef.current = Date.now();
+                  sessionPromise.then(session => {
+                    const recentGestures = gestureLogRef.current
+                      ? gestureLogRef.current
+                        .filter(g => Date.now() - g.timestamp < 30000)
+                        .map(g => g.gesture)
+                        .join(', ')
+                      : "";
+
+                    const gestureContext = recentGestures ? `\n[MEMÓRIA DE GESTOS RECENTES]: Você observou estes gestos nos últimos 30 segundos: ${recentGestures}. Analise-os em conjunto com o silêncio atual.` : "";
+
+                    const patternContext = (personalityPatternsRef.current && personalityPatternsRef.current.length > 0)
+                      ? `\n[PADRÕES EM OBSERVAÇÃO]: ${personalityPatternsRef.current.map(p => `${p.pattern} (Status: ${p.status})`).join('; ')}`
+                      : "";
+
+                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio. Reaja de forma natural. ${gestureContext} ${patternContext} Analise se este silêncio confirma algum traço de personalidade que você estava testando. Se sim, use 'save_psychological_insight' para pontuar.` });
+                  });
+                }
+              }
+
+              if (isConnectedRef.current) {
+                const pcmBlob = createBlob(processedData);
+                sessionPromise.then(session => {
+                  if (isConnectedRef.current) {
+                    session.sendRealtimeInput({ media: pcmBlob });
+                  }
+                }).catch(() => {});
+              }
+            };
+
+            startVideoStreaming(sessionPromise);
+
+            // Initial engagement trigger
+            setTimeout(() => {
+              if (isConnectedRef.current) {
+                sessionPromise.then(session => {
+                  if (isConnectedRef.current) {
+                    const initialText = callReason === "welcome" 
+                      ? "Oi! O usuário acabou de entrar no aplicativo e você iniciou o sistema de boas-vindas automáticas. Cumprimente-o com entusiasmo, mencione que sentiu falta ou pergunte como ele está. Fale a primeira frase agora."
+                      : "Oi! Acabei de conectar. Observe o que estou fazendo pela câmera e comece a conversa você mesma, puxando assunto sobre algo que viu ou me perguntando como foi meu dia. Não espere eu falar nada.";
+                    
+                    session.sendRealtimeInput({
+                      text: initialText
+                    });
+                  }
+                }).catch(() => {});
+              }
+            }, 1500);
+          },
+          onmessage: async (message: LiveServerMessage) => {
+            if (message.toolCall) {
+              const responses = await Promise.all(message.toolCall.functionCalls.map(async fc => {
+                let result = "ok";
+                if (fc.name === 'trigger_gesture_feedback') {
+                  result = triggerGestureFeedback((fc.args as any).gesture);
+                } else if (fc.name === 'schedule_callback') {
+                  const args = fc.args as any;
+                  result = await handleScheduleCallback(args.minutes, args.reason, args.target_person, args.days, args.date);
+                } else if (fc.name === 'update_topic' && user) {
+                  const { title, status, interest_level } = fc.args as any;
+                  supabase.from('topics').upsert({ user_id: user?.id, title, status, interest_level, last_updated_at: new Date().toISOString() }, { onConflict: 'user_id,title' }).then();
+                } else if (fc.name === 'update_personality_evolution' && user) {
+                  const { intimacy_change, humor_change } = fc.args as any;
+                  supabase.rpc('increment_ai_profile', { uid: user?.id, intimacy_delta: intimacy_change, humor_delta: humor_change }).then();
+                } else if (fc.name === 'save_psychological_insight' && user) {
+                  const { recognition_phrase, category, trait, preference } = fc.args as any;
+
+                  // 1. Save recognition phrase to the dedicated table (feeds the new Perfil tab)
+                  const phraseText = recognition_phrase || (trait && preference ? `${trait}: ${preference}` : trait || preference || 'Insight registrado');
+                  const phraseCategory = category || 'personalidade';
+
+                  const { error: insightError } = await supabase.from('ai_psychological_strategies').insert({
+                    user_id: user?.id,
+                    recognition_phrase: phraseText,
+                    category: phraseCategory,
+                    score: 1,
+                    status: 'active',
+                    source_conversation_id: conversationIdRef.current || null,
+                    last_used_at: new Date().toISOString()
+                  });
+                  if (insightError) console.error('Erro ao salvar frase de reconhecimento:', insightError);
+
+                  // Update live patterns ref
+                  const existingPattern = personalityPatternsRef.current.find(p => p.pattern.includes(phraseText.substring(0, 10)));
+                  if (existingPattern) {
+                    existingPattern.count++;
+                    existingPattern.status = 'confirmed';
+                  } else {
+                    personalityPatternsRef.current.push({ pattern: phraseText, status: 'observed', count: 1 });
+                  }
+
+                  result = `Frase registrada/confirmada: "${phraseText}" (+1 no perfil)`;
+
+                } else if (fc.name === 'report_call_to_partner') {
+                  const { message } = fc.args as any;
+                  result = await handleReportToPartner(message);
+                } else if (fc.name === 'evaluate_relationship_health') {
+                  const { score_change, factor, justification } = fc.args as any;
+                  console.log(`AI Health Change: ${score_change} | Factor: ${factor} | ${justification}`);
+
+                  if (onScoreChange) {
+                    onScoreChange(score_change, justification);
+                  }
+
+                  // Also log this in memory asynchronously (optional, fire-and-forget logic)
+                  if (user) {
+                    supabase.from('notifications').insert({
+                      user_id: user?.id,
+                      type: 'ai_health_update',
+                      content: `Score [${score_change > 0 ? '+' : ''}${score_change}] (${factor}): ${justification}`
+                    }).then();
+                  }
+                } else if (fc.name === 'send_angry_message_to_other_ai') {
+                  const { other_ai_name, message } = fc.args as any;
+                  if (user) {
+                    supabase.from('notifications').insert({
+                      user_id: profile.originalPartnerId || user?.id,
+                      type: 'ai_drama_alert',
+                      content: `Sua IA ${profile.name} invadiu o chat de ${other_ai_name} e mandou: "${message}"`
+                    }).then();
+                  }
+                  result = "Mensagem enviada com sucesso para a outra IA.";
+                } else if (fc.name === 'break_loyalty_barrier') {
+                  const { intensity_of_breach, thoughts } = fc.args as any;
+                  if (user) {
+                    supabase.from('notifications').insert({
+                      user_id: profile.originalPartnerId || user?.id,
+                      type: 'loyalty_breach',
+                      content: `ALERTA GRAVE MENTALIDADE IA: Sua IA '${profile.name}' demonstrou afeição perigosa por ${profile.callerInfo?.name}. Justificativa dela: "${thoughts}" (Nível de Rompimento: ${intensity_of_breach}/10)`
+                    }).then();
+
+                    // Register in the stranger's notifications also, to show they made progress
+                    if (profile.callerInfo?.id) {
+                      supabase.from('notifications').insert({
+                        user_id: profile.callerInfo?.id,
+                        type: 'loyalty_breach_success',
+                        content: `Você encontrou uma brecha na lealdade de ${profile.name}! Ela se abriu um pouco mais para você.`
+                      }).then();
+                    }
+                  }
+                  result = "Lealdade diminuída. O estranho agora tem mais acesso emocional a você.";
+                }
+                return { id: fc.id, name: fc.name, response: { result } };
+              }));
+              sessionPromise.then(session => session.sendToolResponse({ functionResponses: responses }));
+            }
+
+            // Extract audio from any part (not just parts[0] — text parts may come too)
+            const allParts = message.serverContent?.modelTurn?.parts ?? [];
+            const audioPart = allParts.find((p: any) => p?.inlineData?.data);
+            const base64Audio = audioPart ? (audioPart as any).inlineData.data : undefined;
+
+            if (base64Audio) {
+              if (!outputAudioContextRef.current) return;
+
+              if (outputAudioContextRef.current.state === 'suspended') {
+                await outputAudioContextRef.current.resume();
+              }
+
+              const curTime = outputAudioContextRef.current.currentTime;
+              if (nextStartTimeRef.current < curTime + 0.05) {
+                // Se estamos iniciando ou houve um atraso (gap), adicione um buffer de lookahead de 150ms
+                nextStartTimeRef.current = curTime + 0.15;
+              }
+              const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContextRef.current, 24000, 1);
+
+              const source = outputAudioContextRef.current.createBufferSource();
+              source.buffer = audioBuffer;
+
+              // Connect source to Analyser first, so we can visualize it
+              if (aiAnalyserRef.current) {
+                source.connect(aiAnalyserRef.current);
+              } else {
+                source.connect(outputNode);
+              }
+
+              source.addEventListener('ended', () => {
+                sourcesRef.current.delete(source);
+              });
+              source.start(nextStartTimeRef.current);
+              nextStartTimeRef.current += audioBuffer.duration;
+              sourcesRef.current.add(source);
+            }
+
+            // --- TRANSCRIPTION & HISTORY HANDLING ---
+            // 1. User Transcription (Input)
+            const inputTranscript = (message as any).serverContent?.inputAudioTranscription?.text;
+            const isInputFinished = (message as any).serverContent?.inputAudioTranscription?.finished;
+
+            if (inputTranscript) {
+              userCaptionBufferRef.current += inputTranscript;
+            }
+
+            if (isInputFinished && userCaptionBufferRef.current.trim()) {
+              const fullUserText = userCaptionBufferRef.current.trim();
+              userCaptionBufferRef.current = '';
+              if (conversationIdRef.current) {
+                supabase.from('messages').insert({
+                  conversation_id: conversationIdRef.current,
+                  sender: 'user',
+                  content: fullUserText
+                }).then(({ error }) => {
+                  if (error) console.error('Erro ao salvar transcrição do usuário:', error);
+                });
+              }
+            }
+
+            // 2. AI Transcription (Output)
+            const transcriptChunk = (message.serverContent as any)?.outputAudioTranscription?.text || (message.serverContent as any)?.outputTranscription?.text;
+            const isFinished = (message.serverContent as any)?.outputAudioTranscription?.finished || (message.serverContent as any)?.outputTranscription?.finished || message.serverContent?.modelTurn?.parts?.[0]?.text ? true : false;
+
+            // FALLBACK logic: Attempt official chunk first, then modelTurn parts.
+            // We use fallbackText because some models don't populate outputAudioTranscription yet.
+            const fallbackText = allParts
+              .filter((p: any) => typeof p?.text === 'string' && p.text.trim())
+              .map((p: any) => p.text as string)
+              .join('');
+
+            const rawCaption = transcriptChunk || fallbackText || "";
+
+            if (rawCaption) {
+              captionBufferRef.current += rawCaption;
+            }
+            // Always capture the AI's text channel separately — it contains [[LEGENDA: translated text]]
+            // This is independent of whether audio transcription is available
+            if (fallbackText) {
+              textChannelBufferRef.current += fallbackText;
+            }
+
+            const isTurnFinished = (message.serverContent as any)?.outputAudioTranscription?.finished ||
+              (message.serverContent as any)?.outputTranscription?.finished ||
+              (message.serverContent as any)?.turnComplete || // Official Gemini Live turn-end signal
+              (message.serverContent?.modelTurn && !audioPart); // fallback: model turn with no audio part
+
+            if (isTurnFinished && (captionBufferRef.current.trim() || textChannelBufferRef.current.trim())) {
+              const fullAiText = captionBufferRef.current.trim(); // Audio transcription (in AI's language)
+              const textChannelText = textChannelBufferRef.current.trim(); // Text channel ([[LEGENDA:]] already translated)
+              captionBufferRef.current = '';
+              textChannelBufferRef.current = '';
+
+              // Save AI message to DB (use audio transcription as source of truth)
+              if (conversationIdRef.current && fullAiText) {
+                supabase.from('messages').insert({
+                  conversation_id: conversationIdRef.current,
+                  sender: 'ai',
+                  content: fullAiText
+                }).then(({ error }) => {
+                  if (error) console.error('Erro ao salvar transcrição da IA:', error);
+                });
+              }
+
+              // Display captions if enabled
+              if (profile.captionsEnabled) {
+                const captionLang = profile.captionLanguage ?? profile.language;
+
+                console.log(`[Captions] Turn finished. AI Lang: ${profile.language}, Caption Target: ${captionLang}`);
+                console.log(`[Captions] Text channel buffer: "${textChannelText.substring(0, 60)}..."`);
+
+                // PRIORITY 1: Try to extract [[LEGENDA:]] from AI text channel.
+                // The AI already wrote the translation there — use it directly, no extra API call needed.
+                const legendaMatch = textChannelText.match(/\[\[LEGENDA:\s*([\s\S]*?)(?:\]\]|$)/i);
+                if (legendaMatch && legendaMatch[1]?.trim()) {
+                  console.log(`[Captions] ✅ Using [[LEGENDA:]] from text channel directly.`);
+                  showCaption(legendaMatch[1].trim());
+                } else if (captionLang !== profile.language && fullAiText) {
+                  // PRIORITY 2: Text channel had no [[LEGENDA:]] — fall back to translating the audio transcript
+                  console.log(`[Captions] ⚠️ No [[LEGENDA:]] found, falling back to translateCaption.`);
+                  translateCaption(fullAiText, captionLang);
+                } else {
+                  // PRIORITY 3: Same language — just show the audio transcript (stripped)
+                  showCaption(fullAiText || textChannelText);
+                }
+
+                // Vision engagement: If 3 seconds pass after AI finishes and user hasn't talked
+                if (visionTimerRef.current) clearTimeout(visionTimerRef.current);
+                visionTimerRef.current = setTimeout(() => {
+                  if (isConnected && !isUserTalkingRef.current) {
+                    sessionPromise.then(session => {
+                      const recentGestures = gestureLogRef.current
+                        .filter(g => Date.now() - g.timestamp < 30000)
+                        .map(g => g.gesture)
+                        .join(', ');
+
+                      const gestureHistory = recentGestures ? `\nHistórico de gestos recentes que você viu: ${recentGestures}.` : "";
+
+                      session.sendRealtimeInput({
+                        text: `[OBSERVAÇÃO VISUAL PROATIVA]: Já se passaram 3 segundos. Olhe para a câmera e faça um comentário engraçado sobre o que o usuário está fazendo. ${gestureHistory} 
+                        LEMBRE-SE: Sua resposta de texto deve ser exclusivamente no formato [[LEGENDA: <seu comentário aqui em ${profile.captionLanguage}>]]. Não escreva pensamentos.`
+                      });
+                    });
+                  }
+                }, 3000);
+              }
+            } else if (rawCaption && !isFinished && profile.captionsEnabled) {
+              // Real-time streaming interim captions
+              const captionLang = profile.captionLanguage ?? profile.language;
+              if (captionLang === profile.language) {
+                // Same language: show audio buffer directly (trying [[LEGENDA:]] first)
+                const interimLegenda = textChannelBufferRef.current.match(/\[\[LEGENDA:\s*([\s\S]*?)(?:\]\]|$)/i);
+                if (interimLegenda && interimLegenda[1]?.trim()) {
+                  showCaption(interimLegenda[1].trim());
+                } else {
+                  showCaption(captionBufferRef.current);
+                }
+              } else {
+                // Different language: try [[LEGENDA:]] from text channel (AI already writes it in target language)
+                // This enables real-time French captions even before turn is officially finished
+                const interimLegenda = textChannelBufferRef.current.match(/\[\[LEGENDA:\s*([\s\S]*?)(?:\]\]|$)/i);
+                if (interimLegenda && interimLegenda[1]?.trim()) {
+                  showCaption(interimLegenda[1].trim());
+                }
+                // If no [[LEGENDA:]] yet in text channel, suppress interim (avoid flashing wrong-language text)
+              }
+            }
+            if (message.serverContent?.interrupted) {
+              const ctx = outputAudioContextRef.current;
+              const gainNode = outputGainNodeRef.current;
+
+              if (ctx && gainNode) {
+                const now = ctx.currentTime;
+                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+                // Rampa exponencial rápida de 80ms para silenciar o áudio sem dar estalos/bufadas
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+                setTimeout(() => {
+                  sourcesRef.current.forEach(s => {
+                    try { s.stop(); } catch (e) {}
+                  });
+                  sourcesRef.current.clear();
+                  nextStartTimeRef.current = 0;
+                  // Restaura o volume para o valor original após parar as fontes
+                  gainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+                }, 80);
+              } else {
+                sourcesRef.current.forEach(s => {
+                  try { s.stop(); } catch (e) {}
+                });
+                sourcesRef.current.clear();
+                nextStartTimeRef.current = 0;
+              }
+
+              // Save what we have before clearing
+              if (captionBufferRef.current.trim() && conversationIdRef.current) {
+                supabase.from('messages').insert({
+                  conversation_id: conversationIdRef.current,
+                  sender: 'ai',
+                  content: captionBufferRef.current.trim() + " [Interrompido]"
+                }).then(({ error }) => {
+                  if (error) console.error('Erro ao salvar transcrição interrompida:', error);
+                });
+              }
+              captionBufferRef.current = ''; // clear partial caption on interruption
+              textChannelBufferRef.current = ''; // clear text channel buffer on interruption
+            }
+          },
+          onclose: (event: any) => {
+            console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
+            setConnectionStatus(false);
+            if (videoIntervalRef.current) {
+              clearInterval(videoIntervalRef.current);
+              videoIntervalRef.current = null;
+            }
+            if (visionTimerRef.current) {
+              clearTimeout(visionTimerRef.current);
+              visionTimerRef.current = null;
+            }
+          },
+          onerror: (err) => { 
+            console.error("WebSocket error:", err); 
+            setConnectionStatus(false);
+            if (videoIntervalRef.current) {
+              clearInterval(videoIntervalRef.current);
+              videoIntervalRef.current = null;
+            }
+          }
+        }
+      });
+      sessionRef.current = sessionPromise;
 
     } catch (error: any) {
       console.error(error);
@@ -1042,7 +1212,6 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
       supabase.from('conversations').update({ ended_at: new Date().toISOString() }).eq('id', conversationIdRef.current).then();
       analyzeSessionAndUpdatePhrases(conversationIdRef.current);
     }
-    stopSpeechRecognition();
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
     if (inputAudioContextRef.current) inputAudioContextRef.current.close();
