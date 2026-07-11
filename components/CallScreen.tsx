@@ -604,7 +604,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
       const needsTranslation = captionsEnabled && captionLang !== profile.language;
 
       const config = {
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-2.0-flash-exp',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -979,9 +979,22 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           onclose: () => {
             console.log("WebSocket connection closed.");
             setIsConnected(false);
+            if (videoIntervalRef.current) {
+              clearInterval(videoIntervalRef.current);
+              videoIntervalRef.current = null;
+            }
+            if (visionTimerRef.current) {
+              clearTimeout(visionTimerRef.current);
+              visionTimerRef.current = null;
+            }
           },
           onerror: (err) => { 
-            console.error(err); 
+            console.error("WebSocket error:", err); 
+            setIsConnected(false);
+            if (videoIntervalRef.current) {
+              clearInterval(videoIntervalRef.current);
+              videoIntervalRef.current = null;
+            }
           }
         }
       });
