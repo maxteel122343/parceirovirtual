@@ -83,6 +83,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const sessionRef = useRef<any>(null);
   const resolvedSessionRef = useRef<any>(null);
   const lastSilencePromptRef = useRef<number>(0);
+  const lastUserSpeechTimeRef = useRef<number>(0);
   const userTalkingTimeoutRef = useRef<any>(null);
   const isUserTalkingRef = useRef<boolean>(false);
   const videoIntervalRef = useRef<number | null>(null);
@@ -690,6 +691,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               if (rms > 0.015 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
+                lastUserSpeechTimeRef.current = Date.now();
+                setIsThinking(false);
                 if (visionTimerRef.current) {
                   clearTimeout(visionTimerRef.current);
                   visionTimerRef.current = null;
@@ -699,6 +702,10 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 // Mantemos o timer de silêncio resetado para que a contagem de silêncio comece só após a IA terminar.
                 if (isAiSpeaking) {
                   lastSilencePromptRef.current = Date.now();
+                  lastUserSpeechTimeRef.current = 0;
+                  setIsThinking(false);
+                } else if (lastUserSpeechTimeRef.current > 0 && Date.now() - lastUserSpeechTimeRef.current > 800) {
+                  setIsThinking(true);
                 }
                 if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
                   // Silent for 10 seconds after talking, and AI is not speaking
@@ -853,6 +860,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
             if (base64Audio) {
               setIsThinking(false);
+              lastUserSpeechTimeRef.current = 0;
               if (!outputAudioContextRef.current) return;
 
               if (outputAudioContextRef.current.state === 'suspended') {
