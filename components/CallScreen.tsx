@@ -328,7 +328,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
 
       // --- INPUT SETUP ---
-      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
+      inputAudioContextRef.current = new AudioContextClass();
       const userAnalyser = inputAudioContextRef.current.createAnalyser();
       userAnalyser.fftSize = 64; // Small size for simple volume check
       userAnalyser.smoothingTimeConstant = 0.5;
