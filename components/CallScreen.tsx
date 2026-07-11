@@ -1087,7 +1087,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
         }
       }).catch(() => {});
-    }, 500);
+    }, 2000);
   };
 
   // ─── POST-SESSION PHRASE ANALYSIS ───────────────────────────────────────────
