@@ -284,6 +284,25 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     }
   };
 
+  // Helper: speak text using browser SpeechSynthesis as fallback
+  const speakWithBrowserTTS = (text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      const langMap: Record<string, string> = {
+        'Português': 'pt-BR', 'English': 'en-US', 'Español': 'es-ES',
+        'Français': 'fr-FR', 'Italiano': 'it-IT', 'Deutsch': 'de-DE',
+        '日本語': 'ja-JP', '中文': 'zh-CN', '한국어': 'ko-KR', 'العربية': 'ar-SA'
+      };
+      utterance.lang = langMap[profile.language] || 'pt-BR';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.1;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+  };
+
   const getAIResponse = async (currentHistory: typeof historyRef.current) => {
     if (!apiKey) return;
     
@@ -333,26 +352,36 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       setHistory(nextHistory);
       historyRef.current = nextHistory;
 
-      // Step 2: Convert text to Gemini native voice audio via TTS model
-      const ttsResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: [{ role: 'user', parts: [{ text: aiText }] }],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
+      // Step 2: Try Gemini TTS, fall back to browser TTS if it fails
+      let audioPlayed = false;
+      try {
+        const ttsResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: [{ role: 'user', parts: [{ text: aiText }] }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
+            }
           }
+        });
+
+        const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
+        const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
+        const aiAudioBase64 = audioPart?.inlineData?.data;
+        const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
+
+        if (aiAudioBase64) {
+          await playResponseAudio(aiAudioBase64, aiAudioMimeType);
+          audioPlayed = true;
         }
-      });
+      } catch (ttsErr) {
+        console.warn("Gemini TTS failed, using browser TTS fallback:", ttsErr);
+      }
 
-      const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
-      const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
-      const aiAudioBase64 = audioPart?.inlineData?.data;
-      const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
-
-      if (aiAudioBase64) {
-        await playResponseAudio(aiAudioBase64, aiAudioMimeType);
-      } else {
+      // Fallback: use browser speech synthesis if Gemini TTS produced no audio
+      if (!audioPlayed) {
+        await speakWithBrowserTTS(aiText);
         setIsSpeaking(false);
         isSpeakingRef.current = false;
         startSpeechRecognition();
