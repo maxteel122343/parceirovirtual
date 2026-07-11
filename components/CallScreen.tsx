@@ -842,7 +842,20 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         const rec = new SpeechRecognition();
         rec.continuous = false;
         rec.interimResults = false;
-        rec.lang = "pt-BR";
+        // Map profile language to BCP-47 language code
+        const langMap: Record<string, string> = {
+          'Português': 'pt-BR',
+          'English': 'en-US',
+          'Español': 'es-ES',
+          'Français': 'fr-FR',
+          'Italiano': 'it-IT',
+          'Deutsch': 'de-DE',
+          '日本語': 'ja-JP',
+          '中文': 'zh-CN',
+          '한국어': 'ko-KR',
+          'العربية': 'ar-SA'
+        };
+        rec.lang = langMap[profile.language] || 'pt-BR';
 
         rec.onstart = () => {
           console.log("Speech recognition started");
@@ -856,14 +869,20 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         };
 
         rec.onerror = (event: any) => {
+          // Silently ignore no-speech — it's not a real error, just user silence
+          if (event.error === 'no-speech') return;
           console.error("Speech recognition error:", event.error);
         };
 
         rec.onend = () => {
+          // Restart after a short pause to avoid hammering the browser
+          // Only restart if still connected and AI is not currently speaking
           if (isConnectedRef.current && !isSpeakingRef.current) {
-            try {
-              rec.start();
-            } catch (e) {}
+            setTimeout(() => {
+              if (isConnectedRef.current && !isSpeakingRef.current) {
+                try { rec.start(); } catch (e) {}
+              }
+            }, 300);
           }
         };
 
