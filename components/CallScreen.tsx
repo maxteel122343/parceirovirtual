@@ -291,22 +291,104 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     }
   };
 
-  // Helper: speak text using browser SpeechSynthesis as fallback
-  const speakWithBrowserTTS = (text: string): Promise<void> => {
-    return new Promise((resolve) => {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const langMap: Record<string, string> = {
-        'Português': 'pt-BR', 'English': 'en-US', 'Español': 'es-ES',
-        'Français': 'fr-FR', 'Italiano': 'it-IT', 'Deutsch': 'de-DE',
-        '日本語': 'ja-JP', '中文': 'zh-CN', '한국어': 'ko-KR', 'العربية': 'ar-SA'
-      };
-      utterance.lang = langMap[profile.language] || 'pt-BR';
-      utterance.rate = 1.0;
-      utterance.pitch = 1.1;
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
-      window.speechSynthesis.speak(utterance);
+  // Speak using Gemini Live API — native voice, higher quota than preview-tts
+  const speakWithGeminiLive = (text: string): Promise<void> => {
+    return new Promise(async (resolve) => {
+      console.log('%c[LIVE TTS] 🎙️ Abrindo sessão Gemini Live para voz nativa...', 'color:#a78bfa');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const pcmChunks: Uint8Array[] = [];
+
+      try {
+        const session = await (ai as any).live.connect({
+          model: 'gemini-2.0-flash-live-001',
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
+            }
+          },
+          callbacks: {
+            onmessage: async (msg: any) => {
+              // Collect audio chunks from model turn
+              const parts = msg?.serverContent?.modelTurn?.parts || [];
+              for (const part of parts) {
+                if (part?.inlineData?.data) {
+                  const raw = atob(part.inlineData.data);
+                  const buf = new Uint8Array(raw.length);
+                  for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+                  pcmChunks.push(buf);
+                }
+              }
+              // When AI finishes speaking
+              if (msg?.serverContent?.turnComplete) {
+                console.log(`%c[LIVE TTS] ✅ Áudio recebido — ${pcmChunks.length} chunks PCM`, 'color:#34d399');
+                try { session.close(); } catch (_) {}
+
+                if (pcmChunks.length > 0 && outputAudioContextRef.current) {
+                  // Combine all PCM chunks into a single buffer
+                  const totalLen = pcmChunks.reduce((s, c) => s + c.length, 0);
+                  const combined = new Uint8Array(totalLen);
+                  let offset = 0;
+                  for (const chunk of pcmChunks) { combined.set(chunk, offset); offset += chunk.length; }
+
+                  try {
+                    const audioBuffer = await decodeAudioData(combined, outputAudioContextRef.current, 24000, 1);
+                    const source = outputAudioContextRef.current.createBufferSource();
+                    source.buffer = audioBuffer;
+                    if (aiAnalyserRef.current) {
+                      source.connect(aiAnalyserRef.current);
+                      if (outputGainNodeRef.current) aiAnalyserRef.current.connect(outputGainNodeRef.current);
+                    } else {
+                      source.connect(outputGainNodeRef.current || outputAudioContextRef.current.destination);
+                    }
+                    source.addEventListener('ended', () => {
+                      sourcesRef.current.delete(source);
+                      setIsSpeaking(false);
+                      isSpeakingRef.current = false;
+                      startSpeechRecognition();
+                      resolve();
+                    });
+                    sourcesRef.current.add(source);
+                    source.start(0);
+                  } catch (decodeErr) {
+                    console.error('%c[LIVE TTS] ❌ Erro ao decodificar PCM:', 'color:red', decodeErr);
+                    setIsSpeaking(false);
+                    isSpeakingRef.current = false;
+                    startSpeechRecognition();
+                    resolve();
+                  }
+                } else {
+                  setIsSpeaking(false);
+                  isSpeakingRef.current = false;
+                  startSpeechRecognition();
+                  resolve();
+                }
+              }
+            },
+            onerror: (e: any) => {
+              console.error('%c[LIVE TTS] ❌ Erro no Live API:', 'color:red', e);
+              setIsSpeaking(false);
+              isSpeakingRef.current = false;
+              startSpeechRecognition();
+              resolve();
+            },
+            onclose: () => {
+              // Only resolve if we haven't already (turnComplete handles it normally)
+            }
+          }
+        });
+
+        // Send the text for the AI to speak
+        await session.sendMessage({ text });
+
+      } catch (liveErr: any) {
+        console.error('%c[LIVE TTS] ❌ Falha ao abrir Live API:', 'color:red;font-weight:bold', liveErr?.message || liveErr);
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        startSpeechRecognition();
+        resolve();
+      }
     });
   };
 
@@ -377,7 +459,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       setHistory(nextHistory);
       historyRef.current = nextHistory;
 
-      // STEP 2: TTS
+      // STEP 2: TTS — try preview-tts first, then Live API (both are native Gemini voice)
       let audioPlayed = false;
       console.log('%c[STEP 2] 🔊 Tentando Gemini TTS (gemini-2.5-flash-preview-tts)...', 'color:#f59e0b');
       const t2Start = performance.now();
@@ -399,25 +481,20 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
 
         if (aiAudioBase64) {
-          console.log(`%c[STEP 2] ✅ Áudio Gemini TTS recebido em ${(performance.now()-t2Start).toFixed(0)}ms — mimeType: ${aiAudioMimeType}, size: ${aiAudioBase64.length} chars`, 'color:#34d399');
+          console.log(`%c[STEP 2] ✅ Áudio Gemini TTS recebido em ${(performance.now()-t2Start).toFixed(0)}ms`, 'color:#34d399');
           await playResponseAudio(aiAudioBase64, aiAudioMimeType);
           audioPlayed = true;
         } else {
-          console.warn('%c[STEP 2] ⚠️ Gemini TTS retornou resposta sem dados de áudio — partes:', 'color:orange', ttsAllParts);
+          console.warn('%c[STEP 2] ⚠️ Gemini TTS sem dados de áudio, usando Live API...', 'color:orange');
         }
       } catch (ttsErr: any) {
-        console.error('%c[STEP 2] ❌ Gemini TTS falhou:', 'color:red;font-weight:bold', ttsErr?.message || ttsErr);
-        if (ttsErr?.status) console.error('  HTTP Status:', ttsErr.status);
+        console.error('%c[STEP 2] ❌ Gemini preview-tts falhou (HTTP ' + (ttsErr?.status || '?') + '), usando Live API...', 'color:#f59e0b', ttsErr?.message || ttsErr);
       }
 
-      // STEP 2 FALLBACK: Browser TTS
+      // STEP 2 FALLBACK: Live API (native Gemini voice, different quota)
       if (!audioPlayed) {
-        console.log('%c[STEP 2 FALLBACK] 🗣️ Usando browser SpeechSynthesis como fallback...', 'color:#f472b6');
-        await speakWithBrowserTTS(aiText);
-        console.log('%c[STEP 2 FALLBACK] ✅ Browser TTS concluído', 'color:#34d399');
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        startSpeechRecognition();
+        console.log('%c[STEP 2 FALLBACK] 🎙️ Usando Gemini Live API para voz nativa...', 'color:#a78bfa');
+        await speakWithGeminiLive(aiText);
       }
 
       console.log('%c[CHAMAAMOR] 🏁 Ciclo de resposta completo', 'color:#a78bfa;font-weight:bold');
