@@ -1033,6 +1033,10 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
     if (!canvasRef.current || !videoRef.current) return;
     videoIntervalRef.current = window.setInterval(() => {
       if (!canvasRef.current || !videoRef.current || !isConnectedRef.current) return;
+      // Make sure the video is playing and has valid dimensions before drawing
+      if (videoRef.current.readyState < 2 || videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) {
+        return;
+      }
       const ctx = canvasRef.current.getContext('2d');
       if (!ctx) return;
       canvasRef.current.width = videoRef.current.videoWidth * 0.25;
