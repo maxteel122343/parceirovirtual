@@ -681,6 +681,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   visionTimerRef.current = null;
                 }
               } else { // User is silent
+                // Se a IA estiver falando, o silêncio do usuário é esperado. 
+                // Mantemos o timer de silêncio resetado para que a contagem de silêncio comece só após a IA terminar.
+                if (isAiSpeaking) {
+                  lastSilencePromptRef.current = Date.now();
+                }
                 if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
                   // Silent for 10 seconds after talking, and AI is not speaking
                   isUserTalkingRef.current = false;
