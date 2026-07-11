@@ -80,6 +80,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const sessionRef = useRef<any>(null);
+  const resolvedSessionRef = useRef<any>(null);
   const lastSilencePromptRef = useRef<number>(0);
   const userTalkingTimeoutRef = useRef<any>(null);
   const isUserTalkingRef = useRef<boolean>(false);
@@ -643,6 +644,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             console.log("Gemini Live Connected");
             setConnectionStatus(true);
 
+            // Store resolved session synchronously for direct audio streaming
+            sessionPromise.then(session => {
+              resolvedSessionRef.current = session;
+            });
+
             if (outputAudioContextRef.current?.state === 'suspended') {
               outputAudioContextRef.current.resume();
             }
@@ -650,7 +656,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             if (!inputAudioContextRef.current || !stream || !userAnalyserRef.current) return;
 
             const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(2048, 1, 1);
 
             // Chain: Source -> User Analyser -> ScriptProcessor -> Destination
             source.connect(userAnalyserRef.current);
@@ -710,13 +716,9 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 }
               }
 
-              if (isConnectedRef.current) {
+              if (isConnectedRef.current && resolvedSessionRef.current) {
                 const pcmBlob = createBlob(processedData);
-                sessionPromise.then(session => {
-                  if (isConnectedRef.current) {
-                    session.sendRealtimeInput({ media: pcmBlob });
-                  }
-                }).catch(() => {});
+                resolvedSessionRef.current.sendRealtimeInput({ media: pcmBlob });
               }
             };
 
@@ -1264,7 +1266,10 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
   function encode(bytes: Uint8Array) {
     let binary = '';
     const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+    const chunk_size = 0x8000; // 32KB chunk size to avoid stack overflow
+    for (let i = 0; i < len; i += chunk_size) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk_size) as any);
+    }
     return btoa(binary);
   }
   function decode(base64: string) {
