@@ -667,11 +667,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
               // Noise gate: if volume is below threshold, send zeroed audio to prevent false interruptions
               let processedData = inputData;
-              if (rms < 0.03) {
+              if (rms < 0.01) {
                 processedData = new Float32Array(inputData.length);
               }
 
-              if (rms > 0.03) { // User is talking (ignoring background noise/breathing)
+              if (rms > 0.015) { // User is talking (ignoring background noise/breathing)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
                 if (visionTimerRef.current) {
@@ -679,8 +679,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   visionTimerRef.current = null;
                 }
               } else { // User is silent
-                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 3000) {
-                  // Silent for 3 seconds after talking or at start
+                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
+                  // Silent for 10 seconds after talking, and AI is not speaking
                   isUserTalkingRef.current = false;
                   lastSilencePromptRef.current = Date.now();
                   sessionPromise.then(session => {
@@ -697,7 +697,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                       ? `\n[PADRÕES EM OBSERVAÇÃO]: ${personalityPatternsRef.current.map(p => `${p.pattern} (Status: ${p.status})`).join('; ')}`
                       : "";
 
-                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio há 8 segundos. Reaja de forma natural. ${gestureContext} ${patternContext} Analise se este silêncio confirma algum traço de personalidade que você estava testando. Se sim, use 'save_psychological_insight' para pontuar.` });
+                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio. Reaja de forma natural. ${gestureContext} ${patternContext} Analise se este silêncio confirma algum traço de personalidade que você estava testando. Se sim, use 'save_psychological_insight' para pontuar.` });
                   });
                 }
               }
