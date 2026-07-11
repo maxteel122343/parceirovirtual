@@ -1136,10 +1136,39 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
     if (visionTimerRef.current) clearTimeout(visionTimerRef.current);
   };
 
+  function downsampleBuffer(buffer: Float32Array, inputSampleRate: number, outputSampleRate: number) {
+    if (inputSampleRate === outputSampleRate) {
+      return buffer;
+    }
+    const sampleRateRatio = inputSampleRate / outputSampleRate;
+    const newLength = Math.round(buffer.length / sampleRateRatio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+      let accum = 0;
+      let count = 0;
+      for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = count > 0 ? accum / count : 0;
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
   function createBlob(data: Float32Array): BlobData {
-    const l = data.length;
+    const inputSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
+    const downsampled = downsampleBuffer(data, inputSampleRate, 16000);
+    const l = downsampled.length;
     const int16 = new Int16Array(l);
-    for (let i = 0; i < l; i++) int16[i] = data[i] * 32768;
+    for (let i = 0; i < l; i++) {
+      const val = Math.max(-1, Math.min(1, downsampled[i]));
+      int16[i] = val < 0 ? val * 0x8000 : val * 0x7FFF;
+    }
     return { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
   }
   function encode(bytes: Uint8Array) {
