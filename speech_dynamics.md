@@ -1,181 +1,90 @@
-# Fluxo de Conversação por Turnos e Voz Dinâmica (STT + Gemini TTS)
+# Sistema de Fala Consistente e Fluida da IA (Voz Nativa Gemini)
 
-Este documento registra a arquitetura de conversação por voz da chamada de vídeo, explicando como o sistema funciona de maneira rápida, consistente e econômica, acompanhado do código de implementação real.
+Este documento descreve como o sistema de **reprodução de voz da Inteligência Artificial** foi projetado para garantir consistência de áudio, alta velocidade de resposta, duração adequada da fala e fluidez absoluta sem cortes abruptos.
 
 ---
 
-## 🛠️ Arquitetura do Sistema de Voz
+## ⚡ Fluxo de Geração e Reprodução da IA
 
-A chamada de vídeo utiliza uma abordagem híbrida de **duas etapas**: processamento local de entrada no cliente (navegador) e síntese generativa premium na nuvem (Gemini).
+Para obter a máxima velocidade de resposta mantendo a fidelidade emocional e qualidade da voz nativa do Gemini, o pipeline de resposta da IA é executado na seguinte ordem:
 
 ```mermaid
 graph TD
-    A[Usuário fala no Microfone] -->|Áudio Local| B(SpeechRecognition do Navegador)
-    B -->|Transcrição Gratuita| C{Texto pronto?}
-    C -->|Sim| D[Passo 1: Gemini 2.5 Flash]
-    D -->|Gera Resposta em Texto| E[Passo 2: Gemini TTS]
-    E -->|Gera Áudio Expressivo Premium| F[Decodificador de Áudio Local]
-    F -->|Reproduz Voz do Gemini| G[Fim do Turno]
-    G -->|Reinicia Microfone| B
+    A[Recebe Entrada de Texto] -->|Passo 1: Texto Rápido| B(Gemini 2.5 Flash)
+    B -->|Resposta em Texto Gerada| C[Passo 2: Síntese Paralela]
+    C -->|Gemini 2.5 Flash Preview TTS| D[Retorno dos Bytes de Áudio em Base64]
+    D -->|Web Audio API Decodificação| E[Criação de AudioBufferSourceNode]
+    E -->|Conexão ao Analisador Gráfico| F[Reprodução Contínua e Sem Delay]
 ```
 
 ---
 
-## 💻 Implementação do Código
+## 1. Otimização do Tempo de Resposta (Pipeline em 2 Etapas)
 
-### 1. Inicialização do Reconhecimento de Fala (STT Local)
-Configurado dentro da função `startCall` no arquivo [CallScreen.tsx](file:///c:/Users/Millerium/Downloads/chamaamor-main/chamaamor-main/components/CallScreen.tsx). O reconhecimento detecta o idioma configurado no perfil e reinicia de forma segura com um delay para evitar loops infinitos.
+Em vez de usar conexões de streaming contínuo por WebSocket (que causam cortes na fala se a rede oscilar), a IA opera de forma atômica e estruturada:
 
-```typescript
-// Configuração do Speech Recognition no navegador do usuário
-const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-if (SpeechRecognition) {
-  const rec = new SpeechRecognition();
-  rec.continuous = false;
-  rec.interimResults = false;
-  
-  // Mapeamento dinâmico para os códigos de idioma BCP-47
-  const langMap: Record<string, string> = {
-    'Português': 'pt-BR',
-    'English': 'en-US',
-    'Español': 'es-ES',
-    'Français': 'fr-FR',
-    'Italiano': 'it-IT',
-    'Deutsch': 'de-DE',
-    '日本語': 'ja-JP',
-    '中文': 'zh-CN',
-    '한국어': 'ko-KR',
-    'العربية': 'ar-SA'
-  };
-  rec.lang = langMap[profile.language] || 'pt-BR';
-
-  rec.onstart = () => {
-    console.log("Speech recognition started");
-  };
-
-  rec.onresult = (event: any) => {
-    const text = event.results[0][0].transcript;
-    if (text && text.trim().length > 0) {
-      handleUserSpeech(text); // Dispara envio para IA
-    }
-  };
-
-  rec.onerror = (event: any) => {
-    // Silencia o erro no-speech (silêncio normal do usuário) para evitar logs desnecessários
-    if (event.error === 'no-speech') return;
-    console.error("Speech recognition error:", event.error);
-  };
-
-  rec.onend = () => {
-    // Reinicia após um curto delay para não sobrecarregar o processador do navegador
-    if (isConnectedRef.current && !isSpeakingRef.current) {
-      setTimeout(() => {
-        if (isConnectedRef.current && !isSpeakingRef.current) {
-          try { rec.start(); } catch (e) {}
-        }
-      }, 300);
-    }
-  };
-
-  recognitionRef.current = rec;
-}
-```
+1. **Geração de Texto em Milissegundos (`gemini-2.5-flash`)**: A IA primeiro gera o texto da resposta. Isso é extremamente rápido, pois modelos de linguagem para texto respondem quase instantaneamente. A legenda é exibida na tela de imediato, dando feedback visual sem qualquer atraso.
+2. **Síntese Direta de Voz (`gemini-2.5-flash-preview-tts`)**: A resposta em texto curta é imediatamente enviada para o sintetizador de voz nativo do Gemini, requisitando a modalidade `['AUDIO']` com a voz correspondente do perfil (ex: Puck, Kore). A API envia o bloco de áudio completo.
 
 ---
 
-### 2. Processamento da Resposta da IA (Texto ➡️ Áudio Gemini TTS)
-Ao concluir a transcrição da fala do usuário, o sistema executa o fluxo de geração em 2 etapas para extrair o texto inteligente e sintetizar a voz nativa do Gemini.
+## 2. Consistência e Fluidez do Áudio (Web Audio API)
+
+Para evitar as "bufadas", distorções de grave ou cortes abruptos no meio da frase típicos de sistemas que tocam áudio picotado (streaming de chunks PCM soltos), a reprodução utiliza a **Web Audio API**:
+
+* **Pacote Completo**: O arquivo de áudio recebido (`audio/wav`) é decodificado por inteiro de uma só vez pelo navegador usando `decodeAudioData`.
+* **Reprodução Estável**: O navegador cria um `AudioBufferSourceNode` dedicado para cada fala. O motor de áudio do sistema operacional renderiza o áudio diretamente do buffer de memória do navegador.
+* **Sem Gargalos de Rede no Meio da Fala**: Como a frase inteira já está carregada na memória do navegador antes de começar a tocar, oscilações na conexão de internet do usuário **não afetam** o áudio em reprodução. A fala da IA flui perfeitamente do início ao fim sem qualquer engasgo ou corte abrupto.
+
+---
+
+## 3. Controle da Duração e Turnos de Fala
+
+* **Garantia de Finalização**: O sistema escuta o evento `'ended'` do canal de áudio (`source.addEventListener('ended')`). Isso garante que a IA fale até a última sílaba de sua resposta antes de abrir a possibilidade para uma nova iteração.
+* **Prevenção de Sobreposição de Voz**: Enquanto a IA estiver reproduzindo o buffer de voz (`isSpeakingRef.current === true`), qualquer gatilho ou reinicialização de gravação externa é bloqueado, protegendo a integridade da reprodução da voz.
+
+---
+
+## 💻 Código de Implementação da Reprodução da IA
+
+### Geração da Resposta (Texto + Voz)
+Implementado no método `getAIResponse` em [CallScreen.tsx](file:///c:/Users/Millerium/Downloads/chamaamor-main/chamaamor-main/components/CallScreen.tsx):
 
 ```typescript
-const getAIResponse = async (currentHistory: typeof historyRef.current) => {
-  if (!apiKey) return;
-  
-  try {
-    setIsSpeaking(true);
-    isSpeakingRef.current = true;
-    stopSpeechRecognition(); // Muta o microfone temporariamente para IA não se escutar
-
-    const ai = new GoogleGenAI({ apiKey });
-
-    // ETAPA 1: Gerar a resposta lógica inteligente com Gemini 2.5 Flash
-    const textResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: currentHistory.map(h => ({
-        role: h.role,
-        parts: h.parts
-      })),
-      config: {
-        systemInstruction: systemInstructionRef.current,
-      }
-    });
-
-    const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    if (!aiText) {
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-      startSpeechRecognition();
-      return;
-    }
-
-    // Exibe a legenda traduzida instantaneamente na tela
-    showCaption(aiText);
-
-    // Salva a mensagem no histórico do banco de dados (Supabase)
-    if (conversationIdRef.current) {
-      supabase.from('messages').insert({
-        conversation_id: conversationIdRef.current,
-        sender: 'ai',
-        content: aiText
-      }).then();
-    }
-
-    const nextHistory = [
-      ...currentHistory,
-      { role: 'model' as const, parts: [{ text: aiText }] }
-    ];
-    setHistory(nextHistory);
-    historyRef.current = nextHistory;
-
-    // ETAPA 2: Sintetizar a resposta em voz nativa com o Gemini TTS
-    const ttsResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: [{ role: 'user', parts: [{ text: aiText }] }],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
-        }
-      }
-    });
-
-    const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
-    const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
-    const aiAudioBase64 = audioPart?.inlineData?.data;
-    const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
-
-    if (aiAudioBase64) {
-      // Reproduz o áudio recebido
-      await playResponseAudio(aiAudioBase64, aiAudioMimeType);
-    } else {
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-      startSpeechRecognition(); // Reativa escuta se falhar
-    }
-
-  } catch (err) {
-    console.error("Error getting AI voice response:", err);
-    setIsSpeaking(false);
-    isSpeakingRef.current = false;
-    startSpeechRecognition();
+// ETAPA 1: Gerar a resposta lógica inteligente com Gemini 2.5 Flash
+const textResponse = await ai.models.generateContent({
+  model: 'gemini-2.5-flash',
+  contents: currentHistory.map(h => ({
+    role: h.role,
+    parts: h.parts
+  })),
+  config: {
+    systemInstruction: systemInstructionRef.current,
   }
-};
+});
+
+const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+// ETAPA 2: Sintetizar a resposta em voz nativa de alta fidelidade
+const ttsResponse = await ai.models.generateContent({
+  model: 'gemini-2.5-flash-preview-tts',
+  contents: [{ role: 'user', parts: [{ text: aiText }] }],
+  config: {
+    responseModalities: ['AUDIO'],
+    speechConfig: {
+      voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
+    }
+  }
+});
+
+const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
+const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
+const aiAudioBase64 = audioPart?.inlineData?.data;
+const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
 ```
 
----
-
-### 3. Decodificação e Reprodução de Áudio com Controle de Visualizador
-Os bytes Base64 recebidos são decodificados localmente para alimentar a caixa de som e o visualizador gráfico de ondas.
+### Decodificação e Reprodução Fluida
+Implementado no método `playResponseAudio` em [CallScreen.tsx](file:///c:/Users/Millerium/Downloads/chamaamor-main/chamaamor-main/components/CallScreen.tsx):
 
 ```typescript
 const playResponseAudio = async (base64Audio: string, mimeType: string) => {
@@ -186,12 +95,14 @@ const playResponseAudio = async (base64Audio: string, mimeType: string) => {
   }
   
   try {
+    // 1. Converter string Base64 recebida em Array de Bytes binários
     const rawBinary = window.atob(base64Audio);
     const bytes = new Uint8Array(rawBinary.length);
     for (let i = 0; i < rawBinary.length; i++) {
       bytes[i] = rawBinary.charCodeAt(i);
     }
     
+    // 2. Decodificar os bytes em um AudioBuffer na memória local
     let audioBuffer: AudioBuffer;
     if (mimeType.includes('wav')) {
       audioBuffer = await decodeAudioData(bytes, outputAudioContextRef.current, 24000, 1);
@@ -201,10 +112,11 @@ const playResponseAudio = async (base64Audio: string, mimeType: string) => {
       );
     }
     
+    // 3. Criar a fonte de áudio nativa do navegador
     const source = outputAudioContextRef.current.createBufferSource();
     source.buffer = audioBuffer;
     
-    // Conecta ao analisador para mover as ondas visuais da IA na tela
+    // Conectar ao analisador de frequência (usado para animar as ondas visuais da IA)
     if (aiAnalyserRef.current) {
       source.connect(aiAnalyserRef.current);
       if (outputGainNodeRef.current) {
@@ -214,18 +126,18 @@ const playResponseAudio = async (base64Audio: string, mimeType: string) => {
       source.connect(outputGainNodeRef.current || outputAudioContextRef.current.destination);
     }
     
-    // Quando a fala da IA termina, o microfone é liberado para o usuário falar
+    // Garantir que a IA fale a frase completa até o final antes de liberar novas ações
     source.addEventListener('ended', () => {
       sourcesRef.current.delete(source);
       setIsSpeaking(false);
       isSpeakingRef.current = false;
-      startSpeechRecognition(); // Usuário agora pode falar
+      startSpeechRecognition(); // Escuta reativada somente após o fim do áudio
     });
     
     sourcesRef.current.add(source);
     setIsSpeaking(true);
     isSpeakingRef.current = true;
-    source.start(0);
+    source.start(0); // Toca o buffer imediatamente
   } catch (e) {
     console.error("Error playing response audio:", e);
     setIsSpeaking(false);
