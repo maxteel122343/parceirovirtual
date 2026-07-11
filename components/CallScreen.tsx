@@ -668,8 +668,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   visionTimerRef.current = null;
                 }
               } else { // User is silent
-                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 8000) {
-                  // Silent for 8 seconds after talking or at start
+                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 3000) {
+                  // Silent for 3 seconds after talking or at start
                   isUserTalkingRef.current = false;
                   lastSilencePromptRef.current = Date.now();
                   sessionPromise.then(session => {
@@ -940,7 +940,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   showCaption(fullAiText || textChannelText);
                 }
 
-                // Vision engagement: If 8 seconds pass after AI finishes and user hasn't talked
+                // Vision engagement: If 3 seconds pass after AI finishes and user hasn't talked
                 if (visionTimerRef.current) clearTimeout(visionTimerRef.current);
                 visionTimerRef.current = setTimeout(() => {
                   if (isConnected && !isUserTalkingRef.current) {
@@ -953,12 +953,12 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                       const gestureHistory = recentGestures ? `\nHistórico de gestos recentes que você viu: ${recentGestures}.` : "";
 
                       session.sendRealtimeInput({
-                        text: `[OBSERVAÇÃO VISUAL PROATIVA]: Já se passaram 8 segundos. Olhe para a câmera e faça um comentário engraçado sobre o que o usuário está fazendo. ${gestureHistory} 
+                        text: `[OBSERVAÇÃO VISUAL PROATIVA]: Já se passaram 3 segundos. Olhe para a câmera e faça um comentário engraçado sobre o que o usuário está fazendo. ${gestureHistory} 
                         LEMBRE-SE: Sua resposta de texto deve ser exclusivamente no formato [[LEGENDA: <seu comentário aqui em ${profile.captionLanguage}>]]. Não escreva pensamentos.`
                       });
                     });
                   }
-                }, 8000);
+                }, 3000);
               }
             } else if (rawCaption && !isFinished && profile.captionsEnabled) {
               // Real-time streaming interim captions
