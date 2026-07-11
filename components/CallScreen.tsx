@@ -47,6 +47,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     isConnectedRef.current = val;
   };
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
   const [scheduledCall, setScheduledCall] = useState<ScheduledCall | undefined>(undefined);
   const conversationIdRef = useRef<string | null>(null);
@@ -851,6 +852,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             const base64Audio = audioPart ? (audioPart as any).inlineData.data : undefined;
 
             if (base64Audio) {
+              setIsThinking(false);
               if (!outputAudioContextRef.current) return;
 
               if (outputAudioContextRef.current.state === 'suspended') {
@@ -891,17 +893,20 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               userCaptionBufferRef.current += inputTranscript;
             }
 
-            if (isInputFinished && userCaptionBufferRef.current.trim()) {
-              const fullUserText = userCaptionBufferRef.current.trim();
-              userCaptionBufferRef.current = '';
-              if (conversationIdRef.current) {
-                supabase.from('messages').insert({
-                  conversation_id: conversationIdRef.current,
-                  sender: 'user',
-                  content: fullUserText
-                }).then(({ error }) => {
-                  if (error) console.error('Erro ao salvar transcrição do usuário:', error);
-                });
+            if (isInputFinished) {
+              setIsThinking(true);
+              if (userCaptionBufferRef.current.trim()) {
+                const fullUserText = userCaptionBufferRef.current.trim();
+                userCaptionBufferRef.current = '';
+                if (conversationIdRef.current) {
+                  supabase.from('messages').insert({
+                    conversation_id: conversationIdRef.current,
+                    sender: 'user',
+                    content: fullUserText
+                  }).then(({ error }) => {
+                    if (error) console.error('Erro ao salvar transcrição do usuário:', error);
+                  });
+                }
               }
             }
 
@@ -919,6 +924,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             const rawCaption = transcriptChunk || fallbackText || "";
 
             if (rawCaption) {
+              setIsThinking(false);
               captionBufferRef.current += rawCaption;
             }
             // Always capture the AI's text channel separately — it contains [[LEGENDA: translated text]]
@@ -1369,6 +1375,18 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
         </div>
 
         <div ref={partnerVideoRef} className={`flex-1 lg:min-h-0 relative flex items-center justify-center overflow-hidden transition-all duration-500 ${isPink ? 'bg-[#fffafa]' : isDark ? 'bg-[#0b0c10]' : 'bg-[#eef2f7]'}`}>
+          {/* AI Thinking Indicator Badge */}
+          {isThinking && (
+            <div className={`absolute bottom-6 left-6 px-4 py-2.5 rounded-2xl flex items-center gap-3 backdrop-blur-md shadow-lg z-20 border animate-in fade-in slide-in-from-bottom-2 ${isPink ? 'bg-pink-500/25 border-pink-500/40 text-[#912d4a]' : isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-900/10 border-slate-900/10 text-slate-900'}`}>
+              <div className="flex gap-1 items-center">
+                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '0ms' }} />
+                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '150ms' }} />
+                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Pensando...</span>
+            </div>
+          )}
+
           {profile.image && (
             <div className={`absolute inset-0 opacity-30 blur-[120px] scale-150 z-0 ${isPink ? 'mix-blend-multiply' : ''}`} style={{ backgroundImage: `url(${profile.image})`, backgroundSize: 'cover' }} />
           )}
