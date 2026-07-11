@@ -51,10 +51,22 @@ function App() {
   }));
   const [callReason, setCallReason] = useState<string>('initial');
   const [nextScheduledCall, setNextScheduledCall] = useState<ScheduledCall | null>(null);
+  // Known old/stale system keys that should be replaced by the current default
+  const STALE_SYSTEM_KEYS = [
+    "AIzaSyASaen78QQT19xqOW0WBnMJkjQWtis1A10",
+    "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s",
+    "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4",
+    "AIzaSyBOKrGQZ6Z0Xzi4i_ks8B_ZPdsLOnMauUw",
+  ];
   const [apiKey, setApiKey] = useState<string>(() => {
-    // Always use the built-in default key - users should never need to enter one manually
-    localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
-    return DEFAULT_GEMINI_API_KEY;
+    const saved = localStorage.getItem('GEMINI_API_KEY');
+    // If nothing saved or it's an old system key, use current default
+    if (!saved || STALE_SYSTEM_KEYS.includes(saved)) {
+      localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
+      return DEFAULT_GEMINI_API_KEY;
+    }
+    // User has their own custom key - respect it
+    return saved;
   });
   const [user, setUser] = useState<any>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
@@ -98,8 +110,14 @@ function App() {
             setCurrentUserProfile(data);
             if (data.ai_settings) {
               const settings = data.ai_settings as any;
-              // Always use default key - never override with potentially stale saved key
+              // Use user's saved key if it's their own custom one; otherwise use current default
+              if (settings.gemini_api_key && !STALE_SYSTEM_KEYS.includes(settings.gemini_api_key)) {
+                setApiKey(settings.gemini_api_key);
+                localStorage.setItem('GEMINI_API_KEY', settings.gemini_api_key);
+              } else {
                 setApiKey(DEFAULT_GEMINI_API_KEY);
+                localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
+              }
 
               if (!settings.originalPartnerId && data.id) {
                 settings.originalPartnerId = data.id;
@@ -252,11 +270,12 @@ function App() {
   }, [appState, nextScheduledCall, profile.intensity]);
 
   const handleApiKeyChange = async (newKey: string) => {
-    setApiKey(DEFAULT_GEMINI_API_KEY);
-    localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
+    // Always respect whatever key the user sets
+    setApiKey(newKey);
+    localStorage.setItem('GEMINI_API_KEY', newKey);
     if (user) {
       await supabase.from('profiles').update({
-        ai_settings: { ...profile, gemini_api_key: DEFAULT_GEMINI_API_KEY }
+        ai_settings: { ...profile, gemini_api_key: newKey }
       }).eq('id', user.id);
     }
   };

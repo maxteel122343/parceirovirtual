@@ -335,9 +335,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
     const syncProfileToSupabase = async (newProfile: PartnerProfile) => {
         if (!user) return;
-        const DEFAULT_KEY = "AIzaSyDqajVwJ3ajwntdB5-EgYr41UdwBPQtsQw";
         await supabase.from('profiles').update({
-            ai_settings: { ...newProfile, gemini_api_key: DEFAULT_KEY }
+            ai_settings: { ...newProfile, gemini_api_key: apiKey }
         }).eq('id', user.id);
     };
 
