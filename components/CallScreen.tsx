@@ -869,8 +869,9 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         };
 
         rec.onerror = (event: any) => {
-          // Silently ignore no-speech — it's not a real error, just user silence
-          if (event.error === 'no-speech') return;
+          // Silently ignore expected non-critical errors:
+          // 'no-speech' = user is silent, 'aborted' = we called stop() intentionally
+          if (event.error === 'no-speech' || event.error === 'aborted') return;
           console.error("Speech recognition error:", event.error);
         };
 
