@@ -524,10 +524,8 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
       }
 
-      // Request audio (required) separately from video (optional)
-      // This prevents mobile camera failures from breaking the entire call
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
+      // Request ONLY video from getUserMedia — SpeechRecognition gets exclusive mic access
+      // (on PC, getUserMedia({audio:true}) blocks SpeechRecognition from capturing the mic)
       let videoStream: MediaStream | null = null;
       try {
         videoStream = await navigator.mediaDevices.getUserMedia({
@@ -538,15 +536,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
           }
         });
       } catch (videoErr) {
-        console.warn('Camera not available, continuing with audio only:', videoErr);
+        console.warn('Camera not available, continuing without video:', videoErr);
       }
 
-      // Merge audio + video tracks into one stream
-      const combinedTracks = [
-        ...audioStream.getTracks(),
-        ...(videoStream ? videoStream.getTracks() : [])
-      ];
-      const stream = new MediaStream(combinedTracks);
+      const stream = videoStream || new MediaStream();
       mediaStreamRef.current = stream;
 
       if (videoRef.current && videoStream) {
@@ -848,22 +841,9 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         outputAudioContextRef.current.resume();
       }
 
-      if (inputAudioContextRef.current && stream && userAnalyserRef.current) {
-        const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-        const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-        source.connect(userAnalyserRef.current);
-        userAnalyserRef.current.connect(scriptProcessor);
-        scriptProcessor.connect(inputAudioContextRef.current.destination);
-
-        scriptProcessor.onaudioprocess = (e) => {
-          const inputData = e.inputBuffer.getChannelData(0);
-          let sum = 0;
-          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-          const rms = Math.sqrt(sum / inputData.length);
-          setMicLevel(rms); // Update level for visualizer
-        };
-      }
+      // Mic level visualization: animate based on listening/speaking state
+      // (Real audio metering removed — mic is exclusively owned by SpeechRecognition)
+      setMicLevel(0);
 
       // Initialize browser Speech Recognition
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
