@@ -696,15 +696,19 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
             // Initial engagement trigger
             setTimeout(() => {
-              sessionPromise.then(session => {
-                const initialText = callReason === "welcome" 
-                  ? "Oi! O usuário acabou de entrar no aplicativo e você iniciou o sistema de boas-vindas automáticas. Cumprimente-o com entusiasmo, mencione que sentiu falta ou pergunte como ele está. Fale a primeira frase agora."
-                  : "Oi! Acabei de conectar. Observe o que estou fazendo pela câmera e comece a conversa você mesma, puxando assunto sobre algo que viu ou me perguntando como foi meu dia. Não espere eu falar nada.";
-                
-                session.sendRealtimeInput({
-                  text: initialText
-                });
-              });
+              if (isConnectedRef.current) {
+                sessionPromise.then(session => {
+                  if (isConnectedRef.current) {
+                    const initialText = callReason === "welcome" 
+                      ? "Oi! O usuário acabou de entrar no aplicativo e você iniciou o sistema de boas-vindas automáticas. Cumprimente-o com entusiasmo, mencione que sentiu falta ou pergunte como ele está. Fale a primeira frase agora."
+                      : "Oi! Acabei de conectar. Observe o que estou fazendo pela câmera e comece a conversa você mesma, puxando assunto sobre algo que viu ou me perguntando como foi meu dia. Não espere eu falar nada.";
+                    
+                    session.sendRealtimeInput({
+                      text: initialText
+                    });
+                  }
+                }).catch(() => {});
+              }
             }, 1500);
           },
           onmessage: async (message: LiveServerMessage) => {
@@ -987,8 +991,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               textChannelBufferRef.current = ''; // clear text channel buffer on interruption
             }
           },
-          onclose: () => {
-            console.log("WebSocket connection closed.");
+          onclose: (event: any) => {
+            console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
