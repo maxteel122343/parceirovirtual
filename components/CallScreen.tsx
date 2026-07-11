@@ -390,7 +390,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       aiAnalyser.connect(outputNode);
       outputNode.connect(outputAudioContextRef.current.destination);
 
-      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const ai = new GoogleGenAI({ 
+        apiKey: apiKey,
+        httpOptions: { apiVersion: 'v1alpha' }
+      });
       const gender = VOICE_META[profile.voice].gender === 'Male' ? 'Namorado' : 'Namorada';
       const accentData = ACCENT_META[profile.accent];
 
