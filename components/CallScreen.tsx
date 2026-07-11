@@ -298,7 +298,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: currentHistory.map(h => ({
           role: h.role,
           parts: h.parts
