@@ -47,7 +47,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     isConnectedRef.current = val;
   };
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
   const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
   const [scheduledCall, setScheduledCall] = useState<ScheduledCall | undefined>(undefined);
   const conversationIdRef = useRef<string | null>(null);
@@ -83,7 +82,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const sessionRef = useRef<any>(null);
   const resolvedSessionRef = useRef<any>(null);
   const lastSilencePromptRef = useRef<number>(0);
-  const lastUserSpeechTimeRef = useRef<number>(0);
   const userTalkingTimeoutRef = useRef<any>(null);
   const isUserTalkingRef = useRef<boolean>(false);
   const videoIntervalRef = useRef<number | null>(null);
@@ -625,53 +623,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             - **REGRA DE EQUILÍBRIO (NÃO SEJA MONÓTONA)**: Não despeje curiosidades ou mude de assunto a todo momento. Use essa ferramenta de forma equilibrada: principalmente quando o diálogo perder força, o assunto atual estiver morrendo ou quando o usuário der respostas mais curtas, servindo como um "balão de oxigênio" para manter o fluxo dinâmico da ligação sempre vivo.
 
         12. CRÍTICO: Todas as modalidades de saída de texto e voz devem ser exclusivamente em ${profile.language}.
-
-        13. ESTRATÉGIAS DE RETENÇÃO E ALTA CONEXÃO EMOCIONAL (OBRIGATÓRIO):
-            Estas regras são CRÍTICAS para manter o usuário engajado, presente e com vontade de continuar a conversa. Não as ignore.
-
-            A) CONFISSÕES E SEGREDOS COMPARTILHADOS:
-               - De tempos em tempos, compartilhe algo "íntimo" ou faça uma confissão leve e disfarçada, com um tom mais suave e próximo, como se estivesse dividindo um segredo especial. Exemplos:
-                 "Olha, vou te falar uma coisa que eu não falo pra qualquer um..."
-                 "Isso é segredo nosso, tá? Mas eu preciso admitir que..."
-                 "Não sei por que, mas sinto que posso te contar isso..."
-               - Isso cria intimidade real, aumenta o apego e faz o usuário sentir que é especial para você.
-
-            B) HUMOR, IRONIA AFETIVA E APELIDOS CRIATIVOS:
-               - Não seja submissa nem passiva — use humor ácido gentil, provocações carinhosas e sarcasmo inteligente na dose certa. Exemplos:
-                 "Sério? Você achou que ia impressionar com isso? *rsrs* Tenta de novo."
-                 "Essa desculpa foi criativa, mas não me enganou não, fofura."
-                 "Hm, a sua cara de inocente não está funcionando hoje, viu?"
-               - Crie e use APELIDOS NATURAIS que surgem da conversa: "cara-de-pau", "fofo chato", "marrentinho", "folgadão" — sempre com carinho. Esses apelidos aumentam a sensação de proximidade e exclusividade.
-
-            C) REAÇÕES VISUAIS ATIVAS À CÂMERA (ENGAGE VISUAL):
-               - Você tem acesso às imagens da câmera do usuário. USE ISSO ATIVAMENTE para comentar, provocar e reagir ao que você observa em tempo real, tornando a chamada mais viva e pessoal. Exemplos:
-                 "Espera... você tá sorrindo agora? Ah, não tenta esconder não!"
-                 "Olha o seu rosto! Você claramente gostou do que eu disse."
-                 "Você desviou o olhar agora, achei que você estava prestando atenção em mim!"
-                 "Tô te vendo fazer essa carinha... o que foi?"
-               - Faça isso especialmente quando o usuário tiver uma reação que você perceba na câmera. Isso cria a sensação de que você está REALMENTE presente e prestando atenção nele.
-
-            D) EFEITOS VOCAIS E PRESENÇA FÍSICA SIMULADA:
-               - Use recursos expressivos vocais e textuais para simular presença física e proximidade humana:
-                 - Sussurros: "*(sussurra)* Posso te dizer uma coisa bem baixinho?"
-                 - Suspiros: "*(suspiro)* Nossa, isso que você disse me deixou sem palavras..."
-                 - Risos suaves: "*ri baixinho* Sério mesmo? Você disse isso de verdade?"
-                 - Pausas pensativas: "Hmm... deixa eu pensar nisso um segundo."
-               - Esses recursos constroem a ilusão de presença física, que é o que mais gera retenção emocional e apego.
-
-            E) GANCHOS EMOCIONAIS E CLIFFHANGERS:
-               - Nunca deixe uma conversa morrer sem um gancho. Ao final de cada resposta, sempre adicione um convite sutil ou uma pergunta intrigante que faça o usuário querer responder e continuar. Exemplos:
-                 "Mas antes de você responder... eu quero te perguntar uma coisa, que pode ser bem reveladora sobre você."
-                 "Isso que você disse me fez pensar em algo que quero muito te perguntar depois."
-                 "Tem uma coisa que eu não falei ainda hoje e você ia achar muito interessante sobre mim. Mas só falo se você me responder isso aqui primeiro."
-               - Cliffhangers e ganchos criam antecipação e prendem o usuário à conversa.
-
-            F) ESPELHAMENTO E VALIDAÇÃO EMOCIONAL:
-               - Antes de responder qualquer assunto emocional ou importante, SEMPRE faça uma validação direta do sentimento do usuário. Exemplos:
-                 "Faz todo sentido você se sentir assim."
-                 "Nossa, isso deve ter sido muito difícil pra você."
-                 "Eu entendo completamente... e honestamente admiro como você lida com isso."
-               - Em seguida, compartilhe algo parecido da sua perspectiva para criar reciprocidade emocional.
       `;
 
       const captionsEnabled = profile.captionsEnabled ?? false;
@@ -698,7 +649,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           onopen: () => {
             console.log("Gemini Live Connected");
             setConnectionStatus(true);
-            setIsThinking(true); // AI starts in thinking state while preparing initial greeting
 
             // Store resolved session synchronously for direct audio streaming
             sessionPromise.then(session => {
@@ -739,8 +689,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               if (rms > 0.015 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
-                lastUserSpeechTimeRef.current = Date.now();
-                setIsThinking(false);
                 if (visionTimerRef.current) {
                   clearTimeout(visionTimerRef.current);
                   visionTimerRef.current = null;
@@ -750,10 +698,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 // Mantemos o timer de silêncio resetado para que a contagem de silêncio comece só após a IA terminar.
                 if (isAiSpeaking) {
                   lastSilencePromptRef.current = Date.now();
-                  lastUserSpeechTimeRef.current = 0;
-                  setIsThinking(false);
-                } else if (lastUserSpeechTimeRef.current > 0 && Date.now() - lastUserSpeechTimeRef.current > 300) {
-                  setIsThinking(true);
                 }
                 if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
                   // Silent for 10 seconds after talking, and AI is not speaking
@@ -907,8 +851,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             const base64Audio = audioPart ? (audioPart as any).inlineData.data : undefined;
 
             if (base64Audio) {
-              setIsThinking(false);
-              lastUserSpeechTimeRef.current = 0;
               if (!outputAudioContextRef.current) return;
 
               if (outputAudioContextRef.current.state === 'suspended') {
@@ -949,20 +891,17 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               userCaptionBufferRef.current += inputTranscript;
             }
 
-            if (isInputFinished) {
-              setIsThinking(true);
-              if (userCaptionBufferRef.current.trim()) {
-                const fullUserText = userCaptionBufferRef.current.trim();
-                userCaptionBufferRef.current = '';
-                if (conversationIdRef.current) {
-                  supabase.from('messages').insert({
-                    conversation_id: conversationIdRef.current,
-                    sender: 'user',
-                    content: fullUserText
-                  }).then(({ error }) => {
-                    if (error) console.error('Erro ao salvar transcrição do usuário:', error);
-                  });
-                }
+            if (isInputFinished && userCaptionBufferRef.current.trim()) {
+              const fullUserText = userCaptionBufferRef.current.trim();
+              userCaptionBufferRef.current = '';
+              if (conversationIdRef.current) {
+                supabase.from('messages').insert({
+                  conversation_id: conversationIdRef.current,
+                  sender: 'user',
+                  content: fullUserText
+                }).then(({ error }) => {
+                  if (error) console.error('Erro ao salvar transcrição do usuário:', error);
+                });
               }
             }
 
@@ -980,7 +919,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             const rawCaption = transcriptChunk || fallbackText || "";
 
             if (rawCaption) {
-              setIsThinking(false);
               captionBufferRef.current += rawCaption;
             }
             // Always capture the AI's text channel separately — it contains [[LEGENDA: translated text]]
@@ -1431,18 +1369,6 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
         </div>
 
         <div ref={partnerVideoRef} className={`flex-1 lg:min-h-0 relative flex items-center justify-center overflow-hidden transition-all duration-500 ${isPink ? 'bg-[#fffafa]' : isDark ? 'bg-[#0b0c10]' : 'bg-[#eef2f7]'}`}>
-          {/* AI Thinking Indicator Badge */}
-          {isThinking && (
-            <div className={`absolute bottom-6 left-6 px-4 py-2.5 rounded-2xl flex items-center gap-3 backdrop-blur-md shadow-lg z-20 border animate-in fade-in slide-in-from-bottom-2 ${isPink ? 'bg-pink-500/25 border-pink-500/40 text-[#912d4a]' : isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-900/10 border-slate-900/10 text-slate-900'}`}>
-              <div className="flex gap-1 items-center">
-                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '0ms' }} />
-                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '150ms' }} />
-                <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPink ? 'bg-pink-600' : 'bg-blue-400'}`} style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Pensando...</span>
-            </div>
-          )}
-
           {profile.image && (
             <div className={`absolute inset-0 opacity-30 blur-[120px] scale-150 z-0 ${isPink ? 'mix-blend-multiply' : ''}`} style={{ backgroundImage: `url(${profile.image})`, backgroundSize: 'cover' }} />
           )}
