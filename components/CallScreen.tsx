@@ -41,6 +41,11 @@ const LANGUAGE_NAME_MAP: Record<string, string> = {
 
 export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onEndCall, onScoreChange, apiKey, user }) => {
   const [isConnected, setIsConnected] = useState(false);
+  const isConnectedRef = useRef(false);
+  const setConnectionStatus = (val: boolean) => {
+    setIsConnected(val);
+    isConnectedRef.current = val;
+  };
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
   const [scheduledCall, setScheduledCall] = useState<ScheduledCall | undefined>(undefined);
@@ -622,7 +627,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         callbacks: {
           onopen: () => {
             console.log("Gemini Live Connected");
-            setIsConnected(true);
+            setConnectionStatus(true);
 
             if (outputAudioContextRef.current?.state === 'suspended') {
               outputAudioContextRef.current.resume();
@@ -677,8 +682,14 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 }
               }
 
-              const pcmBlob = createBlob(inputData);
-              sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob }));
+              if (isConnectedRef.current) {
+                const pcmBlob = createBlob(inputData);
+                sessionPromise.then(session => {
+                  if (isConnectedRef.current) {
+                    session.sendRealtimeInput({ media: pcmBlob });
+                  }
+                }).catch(() => {});
+              }
             };
 
             startVideoStreaming(sessionPromise);
@@ -978,7 +989,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           },
           onclose: () => {
             console.log("WebSocket connection closed.");
-            setIsConnected(false);
+            setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
               videoIntervalRef.current = null;
@@ -990,7 +1001,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           },
           onerror: (err) => { 
             console.error("WebSocket error:", err); 
-            setIsConnected(false);
+            setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
               videoIntervalRef.current = null;
@@ -1008,14 +1019,18 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
   const startVideoStreaming = (sessionPromise: Promise<any>) => {
     if (!canvasRef.current || !videoRef.current) return;
     videoIntervalRef.current = window.setInterval(() => {
-      if (!canvasRef.current || !videoRef.current) return;
+      if (!canvasRef.current || !videoRef.current || !isConnectedRef.current) return;
       const ctx = canvasRef.current.getContext('2d');
       if (!ctx) return;
       canvasRef.current.width = videoRef.current.videoWidth * 0.25;
       canvasRef.current.height = videoRef.current.videoHeight * 0.25;
       ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
       const base64 = canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
-      sessionPromise.then(session => session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } }));
+      sessionPromise.then(session => {
+        if (isConnectedRef.current) {
+          session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
+        }
+      }).catch(() => {});
     }, 500);
   };
 
