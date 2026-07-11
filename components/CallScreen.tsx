@@ -292,52 +292,63 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       isSpeakingRef.current = true;
       stopSpeechRecognition();
 
-      const ai = new GoogleGenAI({ 
-        apiKey: apiKey,
-        httpOptions: { apiVersion: 'v1beta' }
-      });
+      const ai = new GoogleGenAI({ apiKey });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+      // Step 1: Get text response from gemini-2.5-flash
+      const textResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
         contents: currentHistory.map(h => ({
           role: h.role,
           parts: h.parts
         })),
         config: {
           systemInstruction: systemInstructionRef.current,
-          responseModalities: [Modality.AUDIO],
+        }
+      });
+
+      const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      if (!aiText) {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        startSpeechRecognition();
+        return;
+      }
+
+      // Update history and caption immediately
+      showCaption(aiText);
+
+      if (conversationIdRef.current) {
+        supabase.from('messages').insert({
+          conversation_id: conversationIdRef.current,
+          sender: 'ai',
+          content: aiText
+        }).then();
+      }
+
+      const nextHistory = [
+        ...currentHistory,
+        { role: 'model' as const, parts: [{ text: aiText }] }
+      ];
+      setHistory(nextHistory);
+      historyRef.current = nextHistory;
+
+      // Step 2: Convert text to Gemini native voice audio via TTS model
+      const ttsResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: [{ role: 'user', parts: [{ text: aiText }] }],
+        config: {
+          responseModalities: ['AUDIO'],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
           }
         }
       });
 
-      const allParts = response.candidates?.[0]?.content?.parts || [];
-      const textPart = allParts.find((p: any) => p.text);
-      const audioPart = allParts.find((p: any) => p.inlineData?.data);
-
-      const aiText = textPart?.text || "";
+      const ttsAllParts = ttsResponse.candidates?.[0]?.content?.parts || [];
+      const audioPart = ttsAllParts.find((p: any) => p.inlineData?.data);
       const aiAudioBase64 = audioPart?.inlineData?.data;
-      const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/mp3";
-
-      if (aiText) {
-        showCaption(aiText);
-        
-        if (conversationIdRef.current) {
-          supabase.from('messages').insert({
-            conversation_id: conversationIdRef.current,
-            sender: 'ai',
-            content: aiText
-          }).then();
-        }
-
-        const nextHistory = [
-          ...currentHistory,
-          { role: 'model' as const, parts: [{ text: aiText }] }
-        ];
-        setHistory(nextHistory);
-        historyRef.current = nextHistory;
-      }
+      const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
 
       if (aiAudioBase64) {
         await playResponseAudio(aiAudioBase64, aiAudioMimeType);
