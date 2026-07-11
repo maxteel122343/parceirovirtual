@@ -612,7 +612,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
       const needsTranslation = captionsEnabled && captionLang !== profile.language;
 
       const config = {
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
