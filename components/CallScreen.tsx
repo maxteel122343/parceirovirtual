@@ -651,6 +651,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           onopen: () => {
             console.log("Gemini Live Connected");
             setConnectionStatus(true);
+            setIsThinking(true); // AI starts in thinking state while preparing initial greeting
 
             // Store resolved session synchronously for direct audio streaming
             sessionPromise.then(session => {
@@ -704,7 +705,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   lastSilencePromptRef.current = Date.now();
                   lastUserSpeechTimeRef.current = 0;
                   setIsThinking(false);
-                } else if (lastUserSpeechTimeRef.current > 0 && Date.now() - lastUserSpeechTimeRef.current > 800) {
+                } else if (lastUserSpeechTimeRef.current > 0 && Date.now() - lastUserSpeechTimeRef.current > 300) {
                   setIsThinking(true);
                 }
                 if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
