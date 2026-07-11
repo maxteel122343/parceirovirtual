@@ -48,17 +48,23 @@ export const HumanCallScreen: React.FC<HumanCallScreenProps> = ({
 
         const init = async () => {
             // 1. Get microphone
+            // Request audio first (required), then video separately (optional)
             let stream: MediaStream;
+            let audioStream: MediaStream;
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                  audio: true, 
-                  video: { facingMode: 'user' } 
-                });
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch {
-                alert('Sem permissão de microfone');
                 onEnd();
                 return;
             }
+            let videoStream: MediaStream | null = null;
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            } catch {
+                console.warn('Camera unavailable in HumanCall, audio only');
+            }
+            const combinedTracks = [...audioStream.getTracks(), ...(videoStream ? videoStream.getTracks() : [])];
+            stream = new MediaStream(combinedTracks);
             localStreamRef.current = stream;
 
             // 2. Create RTCPeerConnection

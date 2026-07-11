@@ -197,7 +197,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   };
 
   const requestAdvice = () => {
-    alert("Fale agora: 'Preciso de um conselho' - A IA vai detectar sua entonação.");
+    // Silently trigger - user can just speak naturally
+    sessionRef.current?.then((session: any) => {
+      session?.sendRealtimeInput({ text: '[SISTEMA]: O usuário quer um conselho. Ofereça suporte de forma natural na próxima fala.' });
+    }).catch(() => {});
   };
 
   const showCaption = (text: string) => {
