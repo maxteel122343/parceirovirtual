@@ -1,0 +1,6 @@
+{
+  "name": "Aura AI - Voz e Emoções",
+  "description": "Uma companheira de IA com inteligência emocional, voz realista, humor e reações dinâmicas inspirada no filme Her.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
