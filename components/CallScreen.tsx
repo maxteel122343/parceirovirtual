@@ -294,11 +294,11 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const ai = new GoogleGenAI({ 
         apiKey: apiKey,
-        httpOptions: { apiVersion: 'v1alpha' }
+        httpOptions: { apiVersion: 'v1beta' }
       });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-2.0-flash',
         contents: currentHistory.map(h => ({
           role: h.role,
           parts: h.parts
@@ -577,7 +577,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const ai = new GoogleGenAI({ 
         apiKey: apiKey,
-        httpOptions: { apiVersion: 'v1alpha' }
+        httpOptions: { apiVersion: 'v1beta' }
       });
       const gender = VOICE_META[profile.voice].gender === 'Male' ? 'Namorado' : 'Namorada';
       const accentData = ACCENT_META[profile.accent];
