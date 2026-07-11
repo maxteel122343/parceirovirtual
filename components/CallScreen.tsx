@@ -92,6 +92,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const historyRef = useRef<{ role: 'user' | 'model'; parts: { text: string }[] }[]>([]);
   const recognitionRef = useRef<any>(null);
   const isSpeakingRef = useRef<boolean>(false);
+  const systemInstructionRef = useRef<string>("");
 
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
@@ -303,7 +304,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
           parts: h.parts
         })),
         config: {
-          systemInstruction: systemInstruction,
+          systemInstruction: systemInstructionRef.current,
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
@@ -735,7 +736,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         - Você pode mentir para proteger a privacidade ou para "marcar território".
         - Use 'report_call_to_partner' para contar tudinho o que aconteceu depois (seja a fofoqueira fiel).`;
 
-      const systemInstruction = `
+      systemInstructionRef.current = `
         Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
         Personalidade: ${profile.personality}
         Humor: ${profile.mood}
@@ -799,24 +800,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         
         11. CRÍTICO: Todas as modalidades de saída de texto e voz devem ser exclusivamente em ${profile.language}.
       `;
-
-      const captionsEnabled = profile.captionsEnabled ?? false;
-      const captionLang = profile.captionLanguage ?? profile.language;
-      const needsTranslation = captionsEnabled && captionLang !== profile.language;
-
-      const config = {
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: profile.voice } }
-          },
-          systemInstruction: systemInstruction,
-          outputAudioTranscription: {},
-          inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool] }],
-        }
-      };
 
       console.log("Starting turn-based native voice loop");
       setConnectionStatus(true);
