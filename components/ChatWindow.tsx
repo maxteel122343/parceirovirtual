@@ -136,6 +136,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
     };
 
     const fetchConversations = async () => {
+        if (!currentUser?.id) return;
         setLoadingConversations(true);
         try {
             const { data: sentData } = await supabase
@@ -256,6 +257,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
     }, [activeTarget.id, currentUser?.id]);
 
     useEffect(() => {
+        if (!currentUser?.id) return;
         fetchConversations();
 
         // Listen for new messages to refresh the conversation list (new partners)
@@ -272,7 +274,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
         return () => {
             supabase.removeChannel(channel);
         };
-    }, []);
+    }, [currentUser?.id]);
 
     useEffect(() => {
         if (scrollRef.current) {
