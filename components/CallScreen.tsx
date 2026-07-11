@@ -78,6 +78,8 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const userTalkingTimeoutRef = useRef<any>(null);
   const isUserTalkingRef = useRef<boolean>(false);
   const videoIntervalRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<any>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
   const visionTimerRef = useRef<any>(null);
   const gestureLogRef = useRef<{ gesture: string; timestamp: number }[]>([]);
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
@@ -976,6 +978,15 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           onclose: () => {
             console.log("WebSocket connection closed.");
             setIsConnected(false);
+            // Auto-reconnect silently (up to 5 attempts, with increasing delay)
+            if (reconnectAttemptsRef.current < 5) {
+              const delay = Math.min(2000 * (reconnectAttemptsRef.current + 1), 10000);
+              console.log(`Auto-reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
+              reconnectTimerRef.current = setTimeout(() => {
+                reconnectAttemptsRef.current += 1;
+                startCall();
+              }, delay);
+            }
           },
           onerror: (err) => { 
             console.error(err); 

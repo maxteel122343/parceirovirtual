@@ -217,6 +217,7 @@ function App() {
     if (appState === 'WAITING' || appState === 'SETUP') {
       const timer = setInterval(() => {
         const now = Date.now();
+        // Scheduled callbacks from AI tool (schedule_callback) still work
         if (nextScheduledCall && now >= nextScheduledCall.triggerTime) {
           const reason = nextScheduledCall.reason === 'random' ? 'random' : `reminder:${nextScheduledCall.reason}`;
           if (sessionStorage.getItem('warm_activeTab') === 'chats') {
@@ -231,21 +232,7 @@ function App() {
           return;
         }
 
-        if (!nextScheduledCall) {
-          const randomChance = Math.random();
-          let threshold = 0;
-          if (profile.intensity === CallbackIntensity.HIGH) threshold = 0.05;
-          if (profile.intensity === CallbackIntensity.MEDIUM) threshold = 0.01;
-          if (randomChance < threshold && isCallAllowedToday()) {
-            if (sessionStorage.getItem('warm_activeTab') === 'chats') {
-              triggerAiChatMessage('random');
-            } else {
-              setCallReason('random');
-              setActivePartner(profile);
-              setAppState('INCOMING');
-            }
-          }
-        }
+        // Random AI callback disabled by default - do nothing
       }, 1000);
       return () => clearInterval(timer);
     }
