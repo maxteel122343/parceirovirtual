@@ -292,19 +292,34 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 },
-          facingMode: 'user'
-        }
-      });
+      // Request audio (required) separately from video (optional)
+      // This prevents mobile camera failures from breaking the entire call
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      let videoStream: MediaStream | null = null;
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            width: { ideal: 640 }, 
+            height: { ideal: 480 },
+            facingMode: 'user'
+          }
+        });
+      } catch (videoErr) {
+        console.warn('Camera not available, continuing with audio only:', videoErr);
+      }
+
+      // Merge audio + video tracks into one stream
+      const combinedTracks = [
+        ...audioStream.getTracks(),
+        ...(videoStream ? videoStream.getTracks() : [])
+      ];
+      const stream = new MediaStream(combinedTracks);
       mediaStreamRef.current = stream;
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      if (videoRef.current && videoStream) {
+        videoRef.current.srcObject = videoStream;
+        await videoRef.current.play().catch(() => {});
       }
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
