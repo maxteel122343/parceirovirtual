@@ -252,11 +252,11 @@ function App() {
   }, [appState, nextScheduledCall, profile.intensity]);
 
   const handleApiKeyChange = async (newKey: string) => {
-    setApiKey(newKey);
-    localStorage.setItem('GEMINI_API_KEY', newKey);
+    setApiKey(DEFAULT_GEMINI_API_KEY);
+    localStorage.setItem('GEMINI_API_KEY', DEFAULT_GEMINI_API_KEY);
     if (user) {
       await supabase.from('profiles').update({
-        ai_settings: { ...profile, gemini_api_key: newKey }
+        ai_settings: { ...profile, gemini_api_key: DEFAULT_GEMINI_API_KEY }
       }).eq('id', user.id);
     }
   };
