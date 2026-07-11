@@ -34,6 +34,61 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
     const [error, setError] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
+        return localStorage.getItem("ai_chat_voice_enabled") === 'true';
+    });
+    const [isListening, setIsListening] = useState(false);
+
+    const recognitionRef = useRef<any>(null);
+    const isSpeakingRef = useRef<boolean>(false);
+    const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+    useEffect(() => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const rec = new SpeechRecognition();
+            rec.continuous = false;
+            rec.interimResults = false;
+            rec.lang = "pt-BR";
+
+            rec.onstart = () => {
+                setIsListening(true);
+                setError(null);
+            };
+
+            rec.onresult = (event: any) => {
+                const text = event.results[0][0].transcript;
+                if (text && text.trim().length > 0) {
+                    setNewMessage(text);
+                }
+            };
+
+            rec.onerror = (event: any) => {
+                console.error("Erro no reconhecimento de fala:", event.error);
+                setIsListening(false);
+            };
+
+            rec.onend = () => {
+                setIsListening(false);
+            };
+
+            recognitionRef.current = rec;
+        }
+
+        return () => {
+            if (typeof window !== "undefined" && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem("ai_chat_voice_enabled", String(isVoiceEnabled));
+        if (!isVoiceEnabled && typeof window !== "undefined" && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    }, [isVoiceEnabled]);
+
     const isDark = theme === 'dark';
     const isPink = theme === 'pink';
     const cardClasses = isPink ? "bg-white border-[#ffdada] text-[#912d4a]" : isDark ? "bg-[#15181e] border-white/5 text-white" : "bg-white border-slate-100 text-slate-900";
@@ -284,6 +339,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 });
             }
 
+            if (isVoiceEnabled) {
+                speakText(assistantContent);
+            }
+
             // Após terminar o streaming, salva a mensagem completa no Supabase
             const { error: saveError } = await supabase.from('chat_messages').insert({
                 sender_id: activeTarget.id,
@@ -311,6 +370,101 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
             setMessages(prev => prev.filter(m => !m.id.startsWith('typing-')));
         } finally {
             setIsAiTyping(false);
+        }
+    };
+
+    const speakText = (text: string) => {
+        if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+        window.speechSynthesis.cancel();
+        isSpeakingRef.current = true;
+
+        // Limpa formatação markdown e colchetes de legenda da IA
+        const cleanText = text
+            .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "")
+            .replace(/haha|hihi|hehe|kkk/gi, "haha")
+            .replace(/^\[\[LEGENDA:\s*([\s\S]*?)(?:\]\]|$)/i, "$1")
+            .trim();
+
+        if (!cleanText) return;
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = "pt-BR";
+
+        // Procura vozes compatíveis no navegador
+        const voices = window.speechSynthesis.getVoices();
+        const targetVoiceName = activeTarget.ai_settings?.voice;
+        let selectedVoice = voices.find(v => v.lang.startsWith("pt") && (v.name.includes("Google") || v.name.includes("Samantha")));
+
+        if (targetVoiceName) {
+            const matching = voices.find(v => v.name.toLowerCase().includes(targetVoiceName.toLowerCase()));
+            if (matching) selectedVoice = matching;
+        }
+
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang.startsWith("pt") || v.lang.includes("PT"));
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+
+        utterance.pitch = 1.0;
+        utterance.rate = 1.0;
+
+        (window as any)._chatUtterance = utterance;
+
+        let fallbackTimer: any = null;
+        const handleSpeechFinished = () => {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            isSpeakingRef.current = false;
+        };
+
+        utterance.onstart = () => {
+            isSpeakingRef.current = true;
+        };
+
+        utterance.onend = () => {
+            handleSpeechFinished();
+        };
+
+        utterance.onerror = () => {
+            handleSpeechFinished();
+        };
+
+        const words = cleanText.split(/\s+/).length;
+        const estimatedTimeMs = (words / 1.5) * 1000 + 4000;
+        fallbackTimer = setTimeout(() => {
+            if (isSpeakingRef.current && (window as any)._chatUtterance === utterance) {
+                handleSpeechFinished();
+            }
+        }, estimatedTimeMs);
+
+        speechUtteranceRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+    };
+
+    const handleToggleListening = async () => {
+        if (isListening) {
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
+            setIsListening(false);
+        } else {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach(track => track.stop());
+                    if (recognitionRef.current) {
+                        recognitionRef.current.start();
+                    }
+                } catch (err) {
+                    console.error("Microphone permission denied:", err);
+                    setError("Permissão de microfone negada pelo navegador.");
+                }
+            } else if (recognitionRef.current) {
+                recognitionRef.current.start();
+            }
         }
     };
 
@@ -406,15 +560,38 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                         </div>
                     </div>
                     {/* Botão fechar para Mobile / Conveniência */}
-                    <button
-                        onClick={onClose}
-                        className="p-3 bg-black/5 dark:bg-white/5 hover:bg-red-500 hover:text-white rounded-xl transition-all"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
+                    {/* Botão de voz e fechar */}
+                    <div className="flex items-center gap-2">
+                        {activeIsAi && (
+                            <button
+                                onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                                className={`p-3 rounded-xl transition-all ${isVoiceEnabled ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-black/5 dark:bg-white/5 opacity-60 hover:opacity-100'}`}
+                                title={isVoiceEnabled ? "Desativar voz da IA" : "Ativar voz da IA"}
+                            >
+                                {isVoiceEnabled ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                    </svg>
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                        <line x1="23" y1="9" x2="17" y2="15"></line>
+                                        <line x1="17" y1="9" x2="23" y2="15"></line>
+                                    </svg>
+                                )}
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="p-3 bg-black/5 dark:bg-white/5 hover:bg-red-500 hover:text-white rounded-xl transition-all"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
@@ -422,10 +599,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                         const isMe = msg.sender_id === currentUser.id;
                         return (
                             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-                                <div className={`max-w-[75%] p-5 rounded-3xl ${isMe ? 'bg-blue-600 text-white rounded-tr-none shadow-xl shadow-blue-500/20' : (isPink ? 'bg-pink-100 text-[#912d4a]' : isDark ? 'bg-white/10 text-white' : 'bg-white shadow-md text-slate-800') + ' rounded-tl-none'}`}>
+                                <div className={`max-w-[75%] p-5 rounded-3xl ${isMe ? 'bg-blue-600 text-white rounded-tr-none shadow-xl shadow-blue-500/20' : (isPink ? 'bg-pink-100 text-[#912d4a]' : isDark ? 'bg-white/10 text-white' : 'bg-white shadow-md text-slate-800') + ' rounded-tl-none'} group relative`}>
                                     <p className="text-[15px] font-medium leading-relaxed">{msg.content}</p>
-                                    <div className="text-[9px] mt-2 font-black uppercase tracking-widest opacity-40">
-                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    <div className="flex items-center justify-between mt-2 gap-4">
+                                        <div className="text-[9px] font-black uppercase tracking-widest opacity-40">
+                                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        {!isMe && activeIsAi && (
+                                            <button
+                                                onClick={() => speakText(msg.content)}
+                                                className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-1 text-inherit"
+                                                title="Ouvir mensagem"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                                </svg>
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -450,15 +641,28 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ currentUser, targetProfi
                 </div>
 
                 <div className="p-6 sm:p-10 border-t border-white/5 bg-black/5">
-                    <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-4">
+                    <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-4 items-center">
+                        <button
+                            type="button"
+                            onClick={handleToggleListening}
+                            className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 transition-all ${isListening ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : 'bg-black/5 dark:bg-white/5 opacity-60 hover:opacity-100'}`}
+                            title={isListening ? "Parar de ouvir" : "Falar mensagem"}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                        </button>
                         <input
                             type="text"
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
-                            placeholder="ESCREVER MENSAGEM..."
+                            placeholder={isListening ? "Ouvindo... fale agora." : "ESCREVER MENSAGEM..."}
                             className={`flex-1 p-6 rounded-[2rem] border text-sm font-bold focus:outline-none transition-all ${inputClasses}`}
                         />
-                        <button type="submit" disabled={!newMessage.trim() || isAiTyping} className="w-20 h-20 bg-blue-600 text-white rounded-[2.5rem] flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                        <button type="submit" disabled={!newMessage.trim() || isAiTyping} className="w-20 h-20 bg-blue-600 text-white rounded-[2.5rem] flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50 shrink-0">
                             <svg className="h-8 w-8 rotate-90" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
                         </button>
                     </form>
