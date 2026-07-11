@@ -311,8 +311,14 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   };
 
   const getAIResponse = async (currentHistory: typeof historyRef.current) => {
-    if (!apiKey) return;
+    if (!apiKey) {
+      console.error('%c[CHAMAAMOR] ❌ Sem API Key — getAIResponse cancelado', 'color:red;font-weight:bold');
+      return;
+    }
     
+    console.group('%c[CHAMAAMOR] 🤖 getAIResponse iniciado', 'color:#a78bfa;font-weight:bold');
+    console.log('Histórico atual:', currentHistory.length, 'mensagens');
+
     try {
       setIsSpeaking(true);
       isSpeakingRef.current = true;
@@ -320,26 +326,38 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       const ai = new GoogleGenAI({ apiKey });
 
-      // Step 1: Get text response from gemini-2.5-flash
-      const textResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: currentHistory.map(h => ({
-          role: h.role,
-          parts: h.parts
-        })),
-        config: {
-          systemInstruction: systemInstructionRef.current,
-        }
-      });
-
-      const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-      if (!aiText) {
+      // STEP 1: Text generation
+      console.log('%c[STEP 1] 📝 Chamando gemini-2.5-flash para texto...', 'color:#60a5fa');
+      const t1Start = performance.now();
+      let textResponse: any;
+      try {
+        textResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: currentHistory.map(h => ({ role: h.role, parts: h.parts })),
+          config: { systemInstruction: systemInstructionRef.current }
+        });
+        console.log(`%c[STEP 1] ✅ Texto gerado em ${(performance.now()-t1Start).toFixed(0)}ms`, 'color:#34d399');
+      } catch (textErr: any) {
+        console.error('%c[STEP 1] ❌ Falha no gemini-2.5-flash (texto):', 'color:red;font-weight:bold', textErr?.message || textErr);
+        console.groupEnd();
         setIsSpeaking(false);
         isSpeakingRef.current = false;
         startSpeechRecognition();
         return;
       }
+
+      const aiText = textResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      if (!aiText) {
+        console.warn('%c[STEP 1] ⚠️ Resposta vazia da IA — nenhum texto retornado', 'color:orange');
+        console.groupEnd();
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        startSpeechRecognition();
+        return;
+      }
+
+      console.log('%c[STEP 1] 💬 Resposta:', 'color:#34d399', aiText.slice(0, 120) + (aiText.length > 120 ? '...' : ''));
 
       // Update history and caption immediately
       showCaption(aiText);
@@ -359,8 +377,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       setHistory(nextHistory);
       historyRef.current = nextHistory;
 
-      // Step 2: Try Gemini TTS, fall back to browser TTS if it fails
+      // STEP 2: TTS
       let audioPlayed = false;
+      console.log('%c[STEP 2] 🔊 Tentando Gemini TTS (gemini-2.5-flash-preview-tts)...', 'color:#f59e0b');
+      const t2Start = performance.now();
       try {
         const ttsResponse = await ai.models.generateContent({
           model: 'gemini-2.5-flash-preview-tts',
@@ -379,23 +399,33 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         const aiAudioMimeType = audioPart?.inlineData?.mimeType || "audio/wav";
 
         if (aiAudioBase64) {
+          console.log(`%c[STEP 2] ✅ Áudio Gemini TTS recebido em ${(performance.now()-t2Start).toFixed(0)}ms — mimeType: ${aiAudioMimeType}, size: ${aiAudioBase64.length} chars`, 'color:#34d399');
           await playResponseAudio(aiAudioBase64, aiAudioMimeType);
           audioPlayed = true;
+        } else {
+          console.warn('%c[STEP 2] ⚠️ Gemini TTS retornou resposta sem dados de áudio — partes:', 'color:orange', ttsAllParts);
         }
-      } catch (ttsErr) {
-        console.warn("Gemini TTS failed, using browser TTS fallback:", ttsErr);
+      } catch (ttsErr: any) {
+        console.error('%c[STEP 2] ❌ Gemini TTS falhou:', 'color:red;font-weight:bold', ttsErr?.message || ttsErr);
+        if (ttsErr?.status) console.error('  HTTP Status:', ttsErr.status);
       }
 
-      // Fallback: use browser speech synthesis if Gemini TTS produced no audio
+      // STEP 2 FALLBACK: Browser TTS
       if (!audioPlayed) {
+        console.log('%c[STEP 2 FALLBACK] 🗣️ Usando browser SpeechSynthesis como fallback...', 'color:#f472b6');
         await speakWithBrowserTTS(aiText);
+        console.log('%c[STEP 2 FALLBACK] ✅ Browser TTS concluído', 'color:#34d399');
         setIsSpeaking(false);
         isSpeakingRef.current = false;
         startSpeechRecognition();
       }
 
-    } catch (err) {
-      console.error("Error getting AI voice response:", err);
+      console.log('%c[CHAMAAMOR] 🏁 Ciclo de resposta completo', 'color:#a78bfa;font-weight:bold');
+      console.groupEnd();
+
+    } catch (err: any) {
+      console.error('%c[CHAMAAMOR] ❌ Erro crítico em getAIResponse:', 'color:red;font-weight:bold', err?.message || err);
+      console.groupEnd();
       setIsSpeaking(false);
       isSpeakingRef.current = false;
       startSpeechRecognition();
@@ -403,9 +433,15 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   };
 
   const handleUserSpeech = async (rawText: string) => {
+    const isVAD = rawText.startsWith('[VAD] ');
     // Strip internal [VAD] prefix used by the MediaRecorder fallback
-    const text = rawText.startsWith('[VAD] ') ? rawText.slice(6) : rawText;
-    if (!text.trim() || !isConnectedRef.current) return;
+    const text = isVAD ? rawText.slice(6) : rawText;
+
+    if (!text.trim()) { console.warn('%c[CHAMAAMOR] ⚠️ handleUserSpeech: texto vazio, ignorando', 'color:orange'); return; }
+    if (!isConnectedRef.current) { console.warn('%c[CHAMAAMOR] ⚠️ handleUserSpeech: isConnected=false, ignorando', 'color:orange'); return; }
+
+    const source = isVAD ? '🎙️ VAD/MediaRecorder' : '🗣️ SpeechRecognition';
+    console.log(`%c[CHAMAAMOR] 👤 Usuário falou via ${source}:`, 'color:#fb923c;font-weight:bold', `"${text}"`);
     
     stopSpeechRecognition();
     
@@ -872,25 +908,30 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         recorder.onstop = async () => {
           const chunks = audioChunksRef.current;
           audioChunksRef.current = [];
-          if (chunks.length === 0 || !isConnectedRef.current || isSpeakingRef.current) return;
+          if (chunks.length === 0 || !isConnectedRef.current || isSpeakingRef.current) {
+            console.log('%c[VAD] ⏸️ Gravação ignorada (sem chunks, desconectado ou IA falando)', 'color:gray');
+            return;
+          }
 
           const blob = new Blob(chunks, { type: mimeType });
-          if (blob.size < 5000) return; // Skip tiny/empty recordings
+          console.log(`%c[VAD] 🎙️ Gravação concluída \u2014 tamanho: ${(blob.size/1024).toFixed(1)}KB, chunks: ${chunks.length}`, 'color:#c084fc;font-weight:bold');
+
+          if (blob.size < 5000) {
+            console.log('%c[VAD] ⚠️ Áudio muito curto (<5KB), ignorando', 'color:orange');
+            return;
+          }
 
           // Convert blob to base64 and send to Gemini
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64 = (reader.result as string).split(',')[1];
-            if (!base64) return;
+            if (!base64) { console.warn('%c[VAD] ❌ Falha ao converter áudio para base64', 'color:red'); return; }
+
+            console.log('%c[VAD] 📤 Enviando áudio ao Gemini para transcrição...', 'color:#c084fc');
 
             const userAudioPart = {
               inlineData: { mimeType, data: base64 }
             };
-
-            const updatedHistory = [
-              ...historyRef.current,
-              { role: 'user' as const, parts: [{ text: '[áudio do usuário]' }] }
-            ];
 
             // Use Gemini with audio input to transcribe + generate response
             try {
@@ -905,10 +946,13 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               });
               const spokenText = transcribeResp.candidates?.[0]?.content?.parts?.[0]?.text || '';
               if (spokenText && spokenText.trim()) {
+                console.log('%c[VAD] ✅ Gemini transcreveu:', 'color:#34d399', `"${spokenText.slice(0,100)}"`);
                 await handleUserSpeech('[VAD] ' + spokenText.trim());
+              } else {
+                console.warn('%c[VAD] ⚠️ Gemini não detectou fala no áudio enviado', 'color:orange');
               }
-            } catch (e) {
-              console.warn('VAD Gemini audio fallback failed:', e);
+            } catch (e: any) {
+              console.error('%c[VAD] ❌ Gemini audio fallback falhou:', 'color:red;font-weight:bold', e?.message || e);
             }
           };
           reader.readAsDataURL(blob);
@@ -988,7 +1032,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         rec.lang = langMap[profile.language] || 'pt-BR';
 
         rec.onstart = () => {
-          console.log("Speech recognition started");
+          console.log('%c[SR] 🎤 SpeechRecognition ativado — aguardando voz...', 'color:#38bdf8');
         };
 
         rec.onresult = (event: any) => {
@@ -1003,7 +1047,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           // Silently ignore expected non-critical errors:
           // 'no-speech' = user is silent, 'aborted' = we called stop() intentionally
           if (event.error === 'no-speech' || event.error === 'aborted') return;
-          console.error("Speech recognition error:", event.error);
+          console.error('%c[SR] ❌ SpeechRecognition erro real:', 'color:red;font-weight:bold', event.error, '→ VAD fallback será usado');
         };
 
         rec.onend = () => {
