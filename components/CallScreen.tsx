@@ -724,7 +724,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
               if (isConnectedRef.current && resolvedSessionRef.current) {
                 const pcmBlob = createBlob(processedData);
-                resolvedSessionRef.current.sendRealtimeInput({ media: pcmBlob });
+                resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };
 
@@ -1098,7 +1098,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
       const base64 = canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
       sessionPromise.then(session => {
         if (isConnectedRef.current) {
-          session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
+          session.sendRealtimeInput({ video: { mimeType: 'image/jpeg', data: base64 } });
         }
       }).catch(() => {});
     }, 2000);
