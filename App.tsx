@@ -57,6 +57,7 @@ function App() {
     "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s",
     "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4",
     "AIzaSyBOKrGQZ6Z0Xzi4i_ks8B_ZPdsLOnMauUw",
+    "AIzaSyDqajVwJ3ajwntdB5-EgYr41UdwBPQtsQw",
   ];
   const [apiKey, setApiKey] = useState<string>(() => {
     const saved = localStorage.getItem('GEMINI_API_KEY');
