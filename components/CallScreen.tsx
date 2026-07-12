@@ -304,7 +304,15 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       // Request audio (required) separately from video (optional)
       // This prevents mobile camera failures from breaking the entire call
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1
+        }
+      });
 
       let videoStream: MediaStream | null = null;
       try {
@@ -1289,7 +1297,8 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
     return bytes;
   }
   async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
-    const dataInt16 = new Int16Array(data.buffer);
+    const safeLength = data.byteLength - (data.byteLength % 2);
+    const dataInt16 = new Int16Array(data.buffer, data.byteOffset, safeLength / 2);
     const frameCount = dataInt16.length / numChannels;
     const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
     for (let c = 0; c < numChannels; c++) {
