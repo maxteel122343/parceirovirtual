@@ -809,13 +809,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                     {[
                         { id: 'dashboard', label: 'Início', icon: '🏠' },
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
-                        { id: 'chats', label: 'Chats', icon: '💬', badge: unreadMessagesCount },
-                        { id: 'map', label: 'Mapa', icon: '📍' },
-                        { id: 'invites', label: 'Convites', icon: '💌', badge: pendingInvitesCount },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
-                        { id: 'calendar', label: 'Agenda', icon: '📅' },
-                        { id: 'memory', label: 'Memória', icon: '🧠' },
-                        { id: 'config', label: 'Ajustes', icon: '⚙️' }
+                        { id: 'calendar', label: 'Agenda', icon: '📅' }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -830,11 +825,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                         >
                             <div className="relative flex items-center justify-center">
                                 <span className="text-xl transition-transform group-hover:scale-110">{tab.icon}</span>
-                                {tab.badge && tab.badge > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] bg-blue-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#0b0c10] px-0.5 animate-in zoom-in duration-300">
-                                        {tab.badge > 9 ? '9+' : tab.badge}
-                                    </span>
-                                )}
                             </div>
                             {isSidebarExpanded && (
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] truncate animate-in fade-in slide-in-from-left-4 duration-500">
@@ -849,26 +839,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                         </button>
                     ))}
                 </nav>
-
-                {/* Theme Cycle at Sidebar Bottom */}
-                <div className="px-3">
-                    <button
-                        onClick={() => {
-                            const nextTheme = profile.theme === 'light' ? 'dark' : profile.theme === 'dark' ? 'pink' : 'light';
-                            updateProfileAndSync(prev => ({ ...prev, theme: nextTheme }));
-                        }}
-                        className={`w-full p-3.5 rounded-2xl flex items-center gap-4 transition-all duration-300 border ${cardClasses} hover:bg-black/5 dark:hover:bg-white/5`}
-                    >
-                        <span className="text-xl flex-shrink-0">
-                            {profile.theme === 'light' ? '🌙' : profile.theme === 'dark' ? '🌸' : '☀️'}
-                        </span>
-                        {isSidebarExpanded && (
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] truncate animate-in fade-in slide-in-from-left-4 duration-500">
-                                {profile.theme === 'light' ? 'Modo Escuro' : profile.theme === 'dark' ? 'Modo Pink' : 'Modo Claro'}
-                            </span>
-                        )}
-                    </button>
-                </div>
             </aside>
 
             {/* Sidebar Overlay (Mobile Only) */}
@@ -938,9 +908,81 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                 <div className={`w-full p-4 md:p-8 rounded-[2rem] md:rounded-[3rem] border relative overflow-hidden ${cardClasses}`}>
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[100px] rounded-full" />
                                     <div className="relative z-10">
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                                            <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Identidade do Relacionamento</p>
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-white/5 pb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Identidade do Relacionamento</p>
+                                            </div>
+                                            
+                                            {/* Quick Navigation Toolbar */}
+                                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-white/5 p-1 rounded-2xl border border-slate-100 dark:border-white/5 shadow-inner">
+                                                {/* Chats */}
+                                                <button
+                                                    onClick={() => setActiveTab('chats')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all relative flex items-center justify-center text-sm"
+                                                    title="Mensagens"
+                                                >
+                                                    <span>💬</span>
+                                                    {unreadMessagesCount > 0 && (
+                                                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-blue-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white dark:border-[#0b0c10] px-0.5">
+                                                            {unreadMessagesCount}
+                                                        </span>
+                                                    )}
+                                                </button>
+
+                                                {/* Mapa */}
+                                                <button
+                                                    onClick={() => setActiveTab('map')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                    title="Mapa"
+                                                >
+                                                    <span>📍</span>
+                                                </button>
+
+                                                {/* Convites */}
+                                                <button
+                                                    onClick={() => setActiveTab('invites')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all relative flex items-center justify-center text-sm"
+                                                    title="Convites"
+                                                >
+                                                    <span>💌</span>
+                                                    {pendingInvitesCount > 0 && (
+                                                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-blue-600 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white dark:border-[#0b0c10] px-0.5">
+                                                            {pendingInvitesCount}
+                                                        </span>
+                                                    )}
+                                                </button>
+
+                                                {/* Memória */}
+                                                <button
+                                                    onClick={() => setActiveTab('memory')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                    title="Memória"
+                                                >
+                                                    <span>🧠</span>
+                                                </button>
+
+                                                {/* Ajustes */}
+                                                <button
+                                                    onClick={() => setActiveTab('config')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                    title="Ajustes"
+                                                >
+                                                    <span>⚙️</span>
+                                                </button>
+
+                                                {/* Tema */}
+                                                <button
+                                                    onClick={() => {
+                                                        const nextTheme = profile.theme === 'light' ? 'dark' : profile.theme === 'dark' ? 'pink' : 'light';
+                                                        updateProfileAndSync(prev => ({ ...prev, theme: nextTheme }));
+                                                    }}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                    title="Mudar Tema"
+                                                >
+                                                    <span>{profile.theme === 'light' ? '🌙' : profile.theme === 'dark' ? '🌸' : '☀️'}</span>
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1749,14 +1791,14 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                 placeholder="Descreva detalhadamente como a IA deve agir..."
                                             />
                                         </div>
-                                        <div className="grid grid-cols-3 gap-3">
+                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                             {Object.values(CallbackIntensity).map((intensity) => (
                                                 <button
                                                     key={intensity}
                                                     onClick={() => updateProfileAndSync(prev => ({ ...prev, intensity }))}
                                                     className={`py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border transition-all ${profile.intensity === intensity ? 'bg-black text-white' : 'border-slate-100 hover:bg-slate-50'}`}
                                                 >
-                                                    {intensity}
+                                                    {intensity.split(' ')[0]}
                                                 </button>
                                             ))}
                                         </div>

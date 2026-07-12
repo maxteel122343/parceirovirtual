@@ -43,6 +43,7 @@ export const ACCENT_META: Record<Accent, { label: string; flagUrl: string; desc:
 };
 
 export enum CallbackIntensity {
+  OFF = 'Desativado',
   LOW = 'Low (Independent)',
   MEDIUM = 'Medium (Attentive)',
   HIGH = 'High (Obsessive/Clingy)'

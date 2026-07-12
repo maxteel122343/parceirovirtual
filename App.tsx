@@ -249,11 +249,12 @@ function App() {
           return;
         }
 
-        if (!nextScheduledCall) {
+        if (!nextScheduledCall && profile.intensity !== CallbackIntensity.OFF) {
           const randomChance = Math.random();
           let threshold = 0;
           if (profile.intensity === CallbackIntensity.HIGH) threshold = 0.05;
           if (profile.intensity === CallbackIntensity.MEDIUM) threshold = 0.01;
+          if (profile.intensity === CallbackIntensity.LOW) threshold = 0.002;
           if (randomChance < threshold && isCallAllowedToday()) {
             if (sessionStorage.getItem('warm_activeTab') === 'chats') {
               triggerAiChatMessage('random');
