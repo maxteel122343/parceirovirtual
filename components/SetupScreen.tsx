@@ -1320,7 +1320,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                     </div>
 
                                     {/* Global AIs Cards */}
-                                    {globalAIs.map((ai, index) => (
+                                    {[...globalAIs]
+                                        .sort((a, b) => {
+                                            const hasImageA = a.image && a.image !== '';
+                                            const hasImageB = b.image && b.image !== '';
+                                            if (hasImageA && !hasImageB) return -1;
+                                            if (!hasImageA && hasImageB) return 1;
+                                            return 0;
+                                        })
+                                        .map((ai, index) => (
                                         <div key={index} className={`group relative flex flex-col rounded-[2.5rem] overflow-hidden border-2 border-transparent hover:border-pink-600/30 transition-all duration-500 ${cardClasses} shadow-2xl h-[550px]`}>
                                             {/* Favorite Icon */}
                                             {user && (
