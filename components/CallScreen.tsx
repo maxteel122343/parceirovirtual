@@ -308,9 +308,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 16000,
-          channelCount: 1
+          autoGainControl: true
         }
       });
 
