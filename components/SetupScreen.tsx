@@ -129,9 +129,35 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
     const status = getRelationshipStatus(profile.relationshipScore);
 
+    const PRESET_GLOBAL_AIS: PartnerProfile[] = [
+        {
+            name: "Dra. Camila Neves",
+            image: "/dra_camila.png",
+            personality: "Didática, empática, acolhedora, realista sobre a rotina exaustiva de estudos e plantões de medicina, mas extremamente apaixonada por salvar vidas e guiar futuros médicos. Age como uma mentora dedicada e conselheira de carreira. Ela te ensina sobre o funcionamento da faculdade de medicina (Ciclo Básico, Clínico, Internato) e debate sobre as especializações médicas (como Cirurgia, Clínica Médica, Pediatria, Psiquiatria) para te ajudar a escolher o seu rumo com calma.",
+            dailyContext: "",
+            mood: Mood.COUNSELOR,
+            voice: VoiceName.Zephyr,
+            accent: Accent.NEUTRO,
+            intensity: CallbackIntensity.MEDIUM,
+            theme: 'light',
+            relationshipScore: 100,
+            history: [],
+            language: PlatformLanguage.PT,
+            gender: 'Feminino',
+            sexuality: 'Heterosexual',
+            bestFriend: 'Estudante de Medicina',
+            originalPartnerId: '',
+            originalPartnerNumber: '',
+            originalPartnerNickname: '',
+            currentPartnerId: '',
+            currentPartnerNumber: '',
+            currentPartnerNickname: ''
+        }
+    ];
+
     const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null);
     const [lastWarningTime, setLastWarningTime] = useState<Record<string, number>>({});
-    const [globalAIs, setGlobalAIs] = useState<PartnerProfile[]>([]);
+    const [globalAIs, setGlobalAIs] = useState<PartnerProfile[]>(PRESET_GLOBAL_AIS);
 
     // Fetch Global AIs from all users
     useEffect(() => {
@@ -157,7 +183,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                     relationshipScore: 100, // default
                     history: []
                 }));
-                setGlobalAIs(allAIs as PartnerProfile[]);
+                
+                setGlobalAIs(prev => {
+                    const merged = [...prev];
+                    allAIs.forEach((ai: any) => {
+                        if (!merged.some(m => m.name === ai.name)) {
+                            merged.push(ai);
+                        }
+                    });
+                    return merged;
+                });
             }
         };
         fetchGlobalAIs();
