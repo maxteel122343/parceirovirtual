@@ -370,7 +370,7 @@ function App() {
     if (scheduled) {
       setNextScheduledCall(scheduled);
       setAppState('SETUP');
-    } else if (reason === 'hangup_abrupt' && profile.intensity !== CallbackIntensity.LOW) {
+    } else if (reason === 'hangup_abrupt' && profile.intensity !== CallbackIntensity.LOW && profile.intensity !== CallbackIntensity.OFF) {
       setNextScheduledCall({
         triggerTime: Date.now() + 5000,
         reason: 'callback_abrupt',
