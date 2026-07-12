@@ -37,7 +37,7 @@ const DEFAULT_PROFILE: PartnerProfile = {
   custom_ais: []
 };
 
-const DEFAULT_GEMINI_API_KEY = atob("QVEuQWI4Uk42TGprZjE3bjV6RGdiN2xzNTkyS0hmY3dsaklveVpneHlPTF9Bd0JRbDB2dw==");
+const DEFAULT_GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
 
 type AppState = 'SETUP' | 'CALLING' | 'WAITING' | 'INCOMING' | 'OUTBOUND_CALLING' | 'HUMAN_CALL';
 
@@ -57,7 +57,6 @@ function App() {
     "AIzaSyDNwhe9s8gdC2SnU2g2bOyBSgRmoE1ER3s",
     "AIzaSyAVacfZmwkcoz7Jzl2C8B_-DDYFyBGD0y4",
     "AIzaSyBOKrGQZ6Z0Xzi4i_ks8B_ZPdsLOnMauUw",
-    "AIzaSyDqajVwJ3ajwntdB5-EgYr41UdwBPQtsQw",
   ];
   const [apiKey, setApiKey] = useState<string>(() => {
     const saved = localStorage.getItem('GEMINI_API_KEY');
