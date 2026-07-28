@@ -40,6 +40,24 @@ const LANGUAGE_NAME_MAP: Record<string, string> = {
   'العربية': 'Arabic'
 };
 
+// ══════════════════════════════════════════════════════════════
+// 🔧 FEATURE FLAGS — mude para `true` para ativar
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * AUTO_DISCONNECT_ON_SILENCE
+ * Quando ativo: se o usuário ficar em silêncio por 3 minutos,
+ * a IA avisa e desconecta automaticamente após 30 segundos.
+ * Útil para economizar crédito da API.
+ *
+ * Para ativar: mude false → true
+ */
+const FEATURE_AUTO_DISCONNECT = false; // ← mude para true para ativar
+const AUTO_DISCONNECT_WARN_MS  = 3 * 60 * 1000; // 3 minutos de silêncio → aviso
+const AUTO_DISCONNECT_GRACE_MS = 30 * 1000;      // +30 segundos → desconecta
+
+// ══════════════════════════════════════════════════════════════
+
 export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onEndCall, onScoreChange, apiKey, user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const isConnectedRef = useRef(false);
@@ -951,6 +969,32 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio por um momento. Se achar apropriado, continue o assunto anterior de forma natural ou aguarde ele falar de forma receptiva e calma. ${gestureContext} ${patternContext}` });
                   });
                 }
+
+                // ── AUTO-DESCONEXÃO POR SILÊNCIO PROLONGADO ──────────────────
+                // DESATIVADO por padrão. Para ativar: mude FEATURE_AUTO_DISCONNECT = true
+                // no topo do arquivo.
+                if (FEATURE_AUTO_DISCONNECT) {
+                  const silenceDuration = Date.now() - lastSilencePromptRef.current;
+
+                  // Após AUTO_DISCONNECT_WARN_MS de silêncio total → avisa o usuário
+                  if (silenceDuration > AUTO_DISCONNECT_WARN_MS && silenceDuration < AUTO_DISCONNECT_WARN_MS + 500) {
+                    console.log('[AUTO-DISCONNECT] Silêncio prolongado detectado. Avisando usuário...');
+                    addConnectionLog('warning', '[AUTO-DESCONEXÃO] 3 min de silêncio. Avisando usuário...');
+                    sessionPromise.then(session => {
+                      session.sendRealtimeInput({
+                        text: `[AUTO-DESCONEXÃO EMINENTE]: O usuário está em silêncio há 3 minutos. Avise-o carinhosamente que você vai desligar em 30 segundos para economizar créditos, a menos que ele diga algo. Fale em tom gentil e levemente preocupado.`
+                      });
+                    });
+                  }
+
+                  // Após AUTO_DISCONNECT_WARN_MS + AUTO_DISCONNECT_GRACE_MS → desconecta
+                  if (silenceDuration > AUTO_DISCONNECT_WARN_MS + AUTO_DISCONNECT_GRACE_MS) {
+                    console.log('[AUTO-DISCONNECT] Timeout atingido. Desconectando chamada por inatividade.');
+                    addConnectionLog('warning', '[AUTO-DESCONEXÃO] Chamada encerrada automaticamente por inatividade.');
+                    onEndCall('hangup_normal');
+                  }
+                }
+                // ─────────────────────────────────────────────────────────────
               }
 
               if (isConnectedRef.current && resolvedSessionRef.current) {
