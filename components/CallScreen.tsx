@@ -333,10 +333,8 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
     window.addEventListener('reminder-triggered', handleReminderTriggered);
     return () => window.removeEventListener('reminder-triggered', handleReminderTriggered);
-  // Native SpeechRecognition for reconnection when offline
+  // Continuous Native SpeechRecognition for voice commands (desligar / religar)
   useEffect(() => {
-    if (isConnected) return;
-
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
@@ -349,19 +347,29 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           const text = event.results[i][0].transcript.toLowerCase();
-          console.log("[Voice Command Offline]:", text);
-          if (text.includes("religar") || text.includes("conectar") || text.includes("ligar novamente") || text.includes("tentar novamente")) {
-            console.log("Comando 'religar' detectado. Reconectando chamada...");
-            addConnectionLog('info', 'Comando de voz "religar" recebido. Reconectando...');
+          console.log("[Native Voice Command]:", text);
+
+          if (text.includes("desligar") || text.includes("desliga") || text.includes("encerrar") || text.includes("parar")) {
+            console.log("Comando 'desligar' detectado via reconhecimento nativo.");
             recognition.stop();
-            startCall();
+            onEndCall('hangup_normal');
             break;
+          }
+
+          if (!isConnectedRef.current) {
+            if (text.includes("religar") || text.includes("conectar") || text.includes("ligar novamente") || text.includes("tentar novamente")) {
+              console.log("Comando 'religar' detectado via reconhecimento nativo. Reconectando...");
+              addConnectionLog('info', 'Comando de voz "religar" recebido. Reconectando...');
+              recognition.stop();
+              startCall();
+              break;
+            }
           }
         }
       }
     };
 
-    recognition.onerror = (e: any) => console.log("Offline SpeechRecognition error:", e);
+    recognition.onerror = (e: any) => console.log("Native SpeechRecognition error:", e);
     
     try {
       recognition.start();
@@ -370,7 +378,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     return () => {
       try { recognition.stop(); } catch (err) {}
     };
-  }, [isConnected]);
+  }, [onEndCall]);
 
   const startCall = async () => {
     try {
