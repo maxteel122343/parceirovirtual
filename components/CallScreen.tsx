@@ -882,9 +882,11 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                 }
               }
 
-              // Send raw PCM audio to Gemini Live session continuously
+              // Send 16kHz downsampled PCM audio to Gemini Live session continuously
               if (isConnectedRef.current && resolvedSessionRef.current) {
-                const pcmBlob = createBlob(inputData);
+                const sampleRate = inputAudioContextRef.current.sampleRate;
+                const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
+                const pcmBlob = createBlob(downsampled);
                 resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };
