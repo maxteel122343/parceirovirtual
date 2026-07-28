@@ -20,11 +20,12 @@ interface BlobData {
 }
 
 const GESTURE_EMOJIS: Record<string, string> = {
-  'smile': '😊 Sorriso detectado',
-  'anger': '😠 Cara feia detectada',
-  'point': '👉 Você apontou!',
-  'wink': '😉 Piscadinha',
-  'look_away': '👀 Olhando pro lado...'
+  'smile':      '😊 Sorriso detectado',
+  'anger':      '😠 Cara feia detectada',
+  'point':      '👉 Você apontou!',
+  'wink':       '😉 Piscadinha',
+  'look_away':  '👀 Olhando pro lado...',
+  'thumbs_up':  '👍 Joinha detectado — desligando!'
 };
 
 const LANGUAGE_NAME_MAP: Record<string, string> = {
@@ -76,6 +77,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const textChannelBufferRef = useRef<string>(''); // Captures AI text channel ([[LEGENDA:]]) separately from audio transcription
   const userCaptionBufferRef = useRef<string>('');
   const pendingTranslateRef = useRef<boolean>(false);
+
+  // Flash visual quando o usuário fala (confirma que o mic está sendo ouvido)
+  const [userSpeakingFlash, setUserSpeakingFlash] = useState(false);
+  const flashTimerRef = useRef<any>(null);
 
   // Audio Levels for Visualization
   const [micLevel, setMicLevel] = useState(0);
@@ -151,7 +156,14 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       // Register gesture in log for later analysis
       gestureLogRef.current.push({ gesture, timestamp: Date.now() });
 
-      // Optional: keep the visual feedback on screen but tell the AI to be silent for now
+      // 👍 Joinha = desligar a chamada imediatamente
+      if (gesture === 'thumbs_up') {
+        setGestureFeedback(GESTURE_EMOJIS[gesture]);
+        addConnectionLog('success', '[GESTO] 👍 Joinha detectado! Encerrando chamada...');
+        setTimeout(() => onEndCall('hangup_normal'), 800); // pequeno delay para o emoji aparecer
+        return "Joinha detectado. Encerrando chamada por gesto do usuário.";
+      }
+
       setGestureFeedback(GESTURE_EMOJIS[gesture]);
       setTimeout(() => setGestureFeedback(null), 3000);
       return "Gesto registrado silenciosamente. Não comente agora, guarde para uma análise posterior do comportamento do usuário.";
@@ -384,104 +396,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
     window.addEventListener('reminder-triggered', handleReminderTriggered);
     return () => window.removeEventListener('reminder-triggered', handleReminderTriggered);
-  }, []); // <-- FIM do useEffect do reminder-triggered
+  }, []); // FIM do useEffect do reminder-triggered
 
-  // ── Escuta local de comandos de voz (SEPARADO — não depende da IA) ──
-  // Este useEffect é independente. Usa a Web Speech API nativa do Chrome para
-  // detectar palavras-chave sem passar pelo servidor Gemini.
-  useEffect(() => {
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
-      addConnectionLog('warning', '[CMD VOZ] Não suportado neste navegador. Use Chrome.');
-      return;
-    }
-
-    addConnectionLog('info', '[CMD VOZ] Iniciando escuta local de comandos (desligar / religar)...');
-    const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = true;
-    recognition.interimResults = true; // Captura palavras enquanto o usuário fala, sem esperar silêncio
-    recognition.lang = 'pt-BR';
-
-    let active = true; // flag para evitar restart após desmontagem
-
-    recognition.onstart = () => {
-      addConnectionLog('success', '[CMD VOZ] ✅ Ativo. Diga "desligar ligação" para fechar ou "religar" para reconectar.');
-    };
-
-    recognition.onend = () => {
-      // Chrome para automaticamente após ~60s de silêncio. Reinicia se ainda estiver na tela.
-      if (active) {
-        addConnectionLog('info', '[CMD VOZ] Reiniciando escuta local (Chrome parou automaticamente)...');
-        try { recognition.start(); } catch (e) {}
-      }
-    };
-
-    recognition.onresult = (event: any) => {
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const transcript = event.results[i][0].transcript.toLowerCase().trim();
-        const isFinal = event.results[i].isFinal;
-        const tag = isFinal ? '[FINAL]' : '[interim]';
-
-        // Log cada fala para o painel de depuração
-        addConnectionLog('info', `[CMD VOZ] ${tag} Ouvi: "${transcript}"`);
-        console.log(`[CMD VOZ] ${tag}:`, transcript);
-
-        // ── DESLIGAR ──
-        const wantsHangup =
-          transcript.includes('desligar') ||
-          transcript.includes('desliga') ||
-          transcript.includes('encerrar chamada') ||
-          transcript.includes('fechar chamada');
-
-        if (wantsHangup) {
-          addConnectionLog('success', `[CMD VOZ] 🔴 "desligar" detectado! Encerrando chamada...`);
-          console.log('[CMD VOZ] Desligando por comando de voz:', transcript);
-          active = false;
-          try { recognition.stop(); } catch (e) {}
-          onEndCall('hangup_normal');
-          return;
-        }
-
-        // ── RELIGAR (só se offline) ──
-        const wantsReconnect =
-          transcript.includes('religar') ||
-          transcript.includes('reconectar') ||
-          transcript.includes('ligar novamente') ||
-          transcript.includes('tentar novamente');
-
-        if (wantsReconnect && !isConnectedRef.current) {
-          addConnectionLog('success', `[CMD VOZ] 🟢 "religar" detectado! Reconectando...`);
-          console.log('[CMD VOZ] Religando por comando de voz:', transcript);
-          active = false;
-          try { recognition.stop(); } catch (e) {}
-          startCall();
-          return;
-        }
-      }
-    };
-
-    recognition.onerror = (e: any) => {
-      const err = e.error || String(e);
-      // 'no-speech' é normal — não mostrar como erro grave
-      if (err === 'no-speech') {
-        console.log('[CMD VOZ] Sem fala detectada (normal), aguardando...');
-      } else {
-        addConnectionLog('warning', `[CMD VOZ] ⚠️ Erro: ${err}`);
-        console.warn('[CMD VOZ] Erro SpeechRecognition:', e);
-      }
-    };
-
-    try {
-      recognition.start();
-    } catch (err: any) {
-      addConnectionLog('warning', `[CMD VOZ] ❌ Falha ao iniciar: ${err.message || String(err)}`);
-    }
-
-    return () => {
-      active = false;
-      try { recognition.stop(); } catch (err) {}
-    };
-  }, [onEndCall]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Comandos de voz (desligar/religar) são detectados via inputAudioTranscription
+  // do Gemini Live dentro do onmessage — sem SpeechRecognition separado.
 
   const startCall = async () => {
     try {
@@ -755,6 +673,24 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         }
       };
 
+      // 🔴 TOOL: end_call — a IA encerra a chamada diretamente
+      // Isso resolve o problema de conflito de microfone: a IA já ouve tudo
+      // pelo Gemini Live e chama essa função quando detecta intenção de desligar.
+      const endCallTool: FunctionDeclaration = {
+        name: 'end_call',
+        description: 'Encerra a chamada imediatamente. Use esta ferramenta quando o usuário pedir para desligar, encerrar, fechar, tchau ou qualquer variação que indique claramente que ele quer terminar a ligação. Exemplos: "desligar", "desliga", "pode desligar", "encerrar chamada", "fechar chamada", "tchau, desliga", "vou desligar". Não espere confirmação — execute imediatamente.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            farewell_message: {
+              type: Type.STRING,
+              description: 'Uma frase curta e carinhosa de despedida que você disse antes de encerrar (ex: "Tamo junto!", "Saudades já!")'
+            }
+          },
+          required: []
+        }
+      };
+
       let extraContext = "";
       if (callReason === "callback_abrupt") extraContext = "Motivo da ligação: O usuário desligou na cara antes. Cobre explicações.";
       else if (callReason === "welcome") extraContext = "Motivo da ligação: O usuário acabou de entrar no app e você está dando as boas-vindas automaticamente. Seja carinhosa e receptiva.";
@@ -793,6 +729,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         - Se ele disser que ainda não fez, mantenha-o pendente.
         - ATENÇÃO RIGOROSA: Você já tem acesso total à agenda ativa do usuário listada em "AGENDA DO USUÁRIO" na sua Memória Ativa. Se o usuário pedir para verificar, listar ou perguntar sobre a agenda/compromissos/lembretes, RESPONDA DIRETAMENTE usando os dados que você já possui. Nunca invente que não tem acesso, não faça perguntas desnecessárias de rodeio e não diga que a agenda não é sua. Seja direta e prestativa!
         - PROATIVIDADE E CONSULTA À AGENDA: Não espere o usuário pedir para você consultar a agenda. Se a conversa der uma deixa ou se você estiver iniciando o MODO PRODUTIVO, consulte a "AGENDA DO USUÁRIO" imediatamente de forma rápida e cite os compromissos mais recentes ou o próximo compromisso importante de forma clara e objetiva. Não faça perguntas do tipo "você quer que eu olhe sua agenda?" ou "posso verificar seus compromissos?". Vá direto ao ponto e diga: "Olhei aqui na sua agenda e vi que você tem X agendado para Y. Como você está se organizando para isso?". Se o usuário não especificar um compromisso ao falar de agenda, cite de forma ágil o compromisso mais próximo ou os mais recentes, sem listá-los de forma cansativa. Mostre que você sabe de tudo que está lá.
+
+        ENCERRAMENTO DE CHAMADA (MUITO IMPORTANTE):
+        - Se o usuário disser qualquer coisa que indique querer desligar ("desligar", "desliga", "pode desligar", "encerrar", "fechar", "tchau desliga", "vou desligar", "desliga pra mim"), diga uma frase curta de despedida E IMEDIATAMENTE chame a ferramenta 'end_call'. Não faça perguntas, não peque confirmação, não prolongue. Encerre na hora.
 
         SISTEMA DE TRAÇOS ROTULADOS E ATENÇÃO DINÂMICA:
         - Ao registrar traços usando 'save_psychological_insight', utilize as categorias 'produtividade' (para atitudes ligadas a tarefas, foco e organização) e 'relacionamento' (para atitudes ligadas a carinho, ciúmes, lealdade e afeto).
@@ -876,7 +815,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool] }],
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool] }],
         }
       };
 
@@ -1119,6 +1058,14 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   const { error } = await supabase.from('reminders').update({ is_completed: true }).eq('owner_id', user.id).eq('title', reminder_title);
                   result = error ? `Erro ao concluir: ${error.message}` : `Lembrete "${reminder_title}" concluído com sucesso.`;
                   addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
+                } else if (fc.name === 'end_call') {
+                  // 🔴 A IA encerra a chamada diretamente — sem conflito de microfone
+                  const { farewell_message } = fc.args as any;
+                  addConnectionLog('success', `[TOOL end_call] 🔴 IA encerrou a chamada. Despedida: "${farewell_message || ''}"`);
+                  console.log('[end_call tool] Chamada encerrada pela IA. Despedida:', farewell_message);
+                  result = 'ok';
+                  // Pequeno delay para a frase de despedida ser reproduzida antes de fechar
+                  setTimeout(() => onEndCall('hangup_normal'), 1200);
                 }
                 return { id: fc.id, name: fc.name, response: { result } };
               }));
@@ -1170,12 +1117,38 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
             if (inputTranscript) {
               userCaptionBufferRef.current += inputTranscript;
-              const lowerTranscript = inputTranscript.toLowerCase();
-              if (lowerTranscript.includes("desligar") || lowerTranscript.includes("desliga") || lowerTranscript.includes("encerrar chamada") || lowerTranscript.includes("encerrar")) {
-                console.log("Comando de voz 'desligar' detectado. Encerrando chamada...");
-                addConnectionLog('info', 'Comando de voz "desligar" recebido. Encerrando chamada.');
+
+              // ── DETECÇÃO DE COMANDOS DE VOZ via transcrição do Gemini ──
+              // O Gemini já captura o mic corretamente. Lemos a transcrição acumulada
+              // para não perder o comando quando ele chega em fragmentos (ex: "des" + "ligar").
+              const accumulatedText = userCaptionBufferRef.current.toLowerCase();
+              const fragmentText   = inputTranscript.toLowerCase();
+
+              const detectHangup = (t: string) =>
+                t.includes('desligar') ||
+                t.includes('desliga') ||
+                t.includes('encerrar chamada') ||
+                t.includes('fechar chamada');
+
+              const detectReconnect = (t: string) =>
+                t.includes('religar') ||
+                t.includes('reconectar') ||
+                t.includes('ligar novamente');
+
+              if (detectHangup(fragmentText) || detectHangup(accumulatedText)) {
+                console.log('[CMD VOZ ✔] Desligar detectado na transcrição Gemini:', accumulatedText);
+                addConnectionLog('success', `[CMD VOZ] 🔴 "desligar" detectado! Encerrando chamada...`);
                 onEndCall('hangup_normal');
                 return;
+              }
+
+              if (detectReconnect(fragmentText) || detectReconnect(accumulatedText)) {
+                if (!isConnectedRef.current) {
+                  console.log('[CMD VOZ ✔] Religar detectado na transcrição Gemini:', accumulatedText);
+                  addConnectionLog('success', `[CMD VOZ] 🟢 "religar" detectado! Reconectando...`);
+                  startCall();
+                  return;
+                }
               }
             }
 
