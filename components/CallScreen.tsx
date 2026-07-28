@@ -555,14 +555,12 @@ EXEMPLOS de boas frases:
 - "Você costuma rir quando fica nervoso ou inseguro"
 - "Você é muito direto e vai logo ao ponto quando faz uma pergunta"
 - "Você fica animado quando o assunto é tecnologia"
-- "Você demonstra ciúmes facilmente quando menciono outras pessoas"
-- "Você costuma ligar de manhã e parece mais alegre nesse horário"
-Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, personalidade, comunicacao`,
+Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume, humor, habito, preferencia, personalidade, comunicacao`,
         parameters: {
           type: Type.OBJECT,
           properties: {
             recognition_phrase: { type: Type.STRING, description: 'Frase descritiva de reconhecimento de personalidade, escrita como se você estivesse descrevendo o usuário (ex: "Você ri quando fica nervoso")' },
-            category: { type: Type.STRING, description: 'Categoria: comportamento | emocao | ciume | humor | habito | preferencia | personalidade | comunicacao' },
+            category: { type: Type.STRING, description: 'Categoria: relacionamento (afeto, ciúmes, etc) | produtividade (organização de tarefas, metas, etc) | comportamento | emocao | ciume | humor | habito | preferencia | personalidade | comunicacao' },
             trait: { type: Type.STRING, description: 'Traço curto para compatibilidade (ex: Introvertido, Direto, Ansioso)' },
             preference: { type: Type.STRING, description: 'Preferência curta (ex: Gosta de humor, Prefere calls curtas)' }
           },
@@ -678,6 +676,12 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         - Fale sobre o lembrete imediatamente! Seja ativa, faça perguntas e dê apoio.
         - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
         - Se ele disser que ainda não fez, mantenha-o pendente.
+        - ATENÇÃO RIGOROSA: Você já tem acesso total à agenda ativa do usuário listada em "AGENDA DO USUÁRIO" na sua Memória Ativa. Se o usuário pedir para verificar, listar ou perguntar sobre a agenda/compromissos/lembretes, RESPONDA DIRETAMENTE usando os dados que você já possui. Nunca invente que não tem acesso, não faça perguntas desnecessárias de rodeio e não diga que a agenda não é sua. Seja direta e prestativa!
+
+        SISTEMA DE TRAÇOS ROTULADOS E ATENÇÃO DINÂMICA:
+        - Ao registrar traços usando 'save_psychological_insight', utilize as categorias 'produtividade' (para atitudes ligadas a tarefas, foco e organização) e 'relacionamento' (para atitudes ligadas a carinho, ciúmes, lealdade e afeto).
+        - Quando a conversa envolver alguma tarefa, compromisso ou lembrete que o usuário está executando, dê atenção especial aos traços salvos na categoria 'produtividade' para guiar sua atitude (ex: incentivar se ele procrastina, parabenizar se ele é focado).
+        - Quando a conversa for informal, íntima ou afetiva, dê atenção aos traços de 'relacionamento'.
 
         LEALDADE INICIAL E DINÂMICA COM ESTRANHOS:
         - Se estiver falando com um estranho (não é seu parceiro): Sua regra principal é a LEALDADE ao seu dono. Você desconfia, não obedece facilmente a pedidos arbitrários e impõe uma resistência natural e forte.
@@ -801,11 +805,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
               // Noise gate: if volume is below threshold or AI is speaking, send zeroed audio to prevent false interruptions
               let processedData = inputData;
-              if (rms < 0.015 || isAiSpeaking) {
+              if (rms < 0.008 || isAiSpeaking) {
                 processedData = new Float32Array(inputData.length);
               }
 
-              if (rms > 0.015 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
+              if (rms > 0.008 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
 
@@ -828,8 +832,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                 if (isAiSpeaking) {
                   lastSilencePromptRef.current = Date.now();
                 }
-                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 10000 && !isSpeaking && aiLevel < 5) {
-                  // Silent for 10 seconds after talking, and AI is not speaking
+                if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 15000 && !isSpeaking && aiLevel < 5) {
+                  // Silent for 15 seconds after talking, and AI is not speaking
                   isUserTalkingRef.current = false;
                   lastSilencePromptRef.current = Date.now();
                   sessionPromise.then(session => {
@@ -846,7 +850,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                       ? `\n[PADRÕES EM OBSERVAÇÃO]: ${personalityPatternsRef.current.map(p => `${p.pattern} (Status: ${p.status})`).join('; ')}`
                       : "";
 
-                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio. Reaja de forma natural. ${gestureContext} ${patternContext} Analise se este silêncio confirma algum traço de personalidade que você estava testando. Se sim, use 'save_psychological_insight' para pontuar.` });
+                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio por um momento. Se achar apropriado, continue o assunto anterior de forma natural ou aguarde ele falar de forma receptiva e calma. ${gestureContext} ${patternContext}` });
                   });
                 }
               }
