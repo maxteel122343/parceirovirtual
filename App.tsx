@@ -587,9 +587,9 @@ function App() {
               }
             };
             setActivePartner(incomingPartner);
-            if (newCall.metadata?.reason === 'location_warning') {
-                setCallReason(`location_warning:${newCall.metadata.reminder_id}`);
-                setAppState('INCOMING');
+            if (newCall.metadata?.reason === 'location_warning' || newCall.metadata?.reason === 'location_arrival') {
+                 setCallReason(`${newCall.metadata.reason}:${newCall.metadata.reminder_id}`);
+                 setAppState('INCOMING');
             }
           }
           if (newCall.is_ai_call) {

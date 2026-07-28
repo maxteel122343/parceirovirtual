@@ -89,6 +89,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const visionTimerRef = useRef<any>(null);
   const gestureLogRef = useRef<{ gesture: string; timestamp: number }[]>([]);
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
+  const userToneRef = useRef<'normal' | 'loud' | 'whisper'>('normal');
 
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
@@ -431,9 +432,10 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
           memoryContext += `\nSUA EVOLUÇÃO: Intimidade ${ai_profile.intimacy_level}%, Humor ${ai_profile.humor_usage}%`;
         }
         if (diary && diary.length > 0) {
-          memoryContext += `\nAGENDA DO USUÁRIO:\n${diary.map(r =>
-            `- "${r.title}" (Agendado por: ${r.creator_ai_name || 'Humano'})`
-          ).join('\n')}`;
+          memoryContext += `\nAGENDA DO USUÁRIO:\n${diary.map(r => {
+            const dateStr = new Date(r.trigger_at).toLocaleString('pt-BR');
+            return `- "${r.title}" agendado para o horário: ${dateStr} (Criado por: ${r.creator_ai_name || 'Humano'})`;
+          }).join('\n')}`;
 
           const otherAiEvent = diary.find(r => r.creator_ai_name && r.creator_ai_name !== profile.name);
           if (otherAiEvent) {
@@ -595,6 +597,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
       else if (callReason === "welcome") extraContext = "Motivo da ligação: O usuário acabou de entrar no app e você está dando as boas-vindas automaticamente. Seja carinhosa e receptiva.";
       else if (callReason?.startsWith("reminder:")) extraContext = `Motivo da ligação: Lembrete agendado sobre: ${callReason.split(':')[1]}`;
       else if (callReason?.startsWith("location_warning:")) extraContext = `ALERTA DE LOCALIZAÇÃO PROATIVO: Você percebeu pelo GPS que o usuário NÃO está no local do compromisso agendado e corre o risco de se atrasar (ou já deveria estar lá). Ligue para avisar, pergunte onde ele está agora e se ele precisa de ajuda para chegar ao local. Seja prestativa e atenciosa.`;
+      else if (callReason?.startsWith("location_arrival:")) extraContext = `PARABÉNS DE CHEGADA PROATIVO: Você percebeu pelo GPS que o usuário ACABA DE CHEGAR no local do compromisso agendado. Ligue para parabenizá-lo calorosamente por ter chegado a tempo, desejar um ótimo treino/atividade e dizer que está torcendo por ele!`;
       else if (callReason === "curiosity_calendar") extraContext = "Motivo da ligação: Você percebeu que o usuário alterou um compromisso que você tinha marcado no calendário. Fique curiosa, pergunte por que ele mudou e se ele ainda quer que você o lembre.";
       else if (callReason === "random") extraContext = "Motivo da ligação: Você sentiu saudades e ligou aleatoriamente.";
       else if (callReason === "receptionist") extraContext = `VOCÊ ESTÁ ATENDENDO POR SEU PARCEIRO "${profile.currentPartnerNickname || 'seu humano'}".
@@ -614,7 +617,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         Sotaque: ${accentData.label} (${accentData.desc}).
         Idioma Primário: ${profile.language}.
         
-        DATA ATUAL: ${new Date().toLocaleString()}
+        DATA ATUAL: ${new Date().toLocaleString('pt-BR')}
         CONTEXTO ATUAL: ${extraContext || profile.dailyContext}
         MEMÓRIA ATIVA: ${memoryContext}
         
@@ -749,6 +752,16 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               if (rms > 0.015 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
+
+                // Categorize sound amplitude
+                if (rms > 0.08) {
+                  userToneRef.current = 'loud';
+                } else if (rms < 0.032) {
+                  userToneRef.current = 'whisper';
+                } else {
+                  userToneRef.current = 'normal';
+                }
+
                 if (visionTimerRef.current) {
                   clearTimeout(visionTimerRef.current);
                   visionTimerRef.current = null;
@@ -970,6 +983,22 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                   if (error) console.error('Erro ao salvar transcrição do usuário:', error);
                 });
               }
+
+              // Inject tone context dynamically before AI response is fully generated
+              let tonePrompt = "";
+              if (userToneRef.current === 'loud') {
+                tonePrompt = "\n[TOM DE VOZ DO USUÁRIO]: O usuário está falando alto ou de forma rápida/agitada. Ajuste seu tom: fale de maneira calma, reconfortante, tranquila e pacífica para acalmá-lo.";
+              } else if (userToneRef.current === 'whisper') {
+                tonePrompt = "\n[TOM DE VOZ DO USUÁRIO]: O usuário está falando sussurrado, baixo ou lento. Ajuste seu tom: fale de maneira doce, suave, acolhedora e cúmplice.";
+              }
+
+              if (tonePrompt) {
+                sessionPromise.then(session => {
+                  session.sendRealtimeInput({ text: tonePrompt });
+                }).catch(() => {});
+              }
+              // Reset tone back to normal for the next turn
+              userToneRef.current = 'normal';
             }
 
             // 2. AI Transcription (Output)

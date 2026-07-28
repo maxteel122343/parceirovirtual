@@ -323,8 +323,17 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                     
                     // If more than 200 meters away and haven't warned recently
                     if (distance > 0.2 && (!lastWarningTime[reminder.id] || now - lastWarningTime[reminder.id] > 30 * 60 * 1000)) {
-                        triggerProactiveCall(reminder);
+                        triggerProactiveCall(reminder, 'location_warning');
                         setLastWarningTime(prev => ({ ...prev, [reminder.id]: now }));
+                    }
+                }
+
+                // Check for successful arrival at the destination (within 200m)
+                if (now >= (triggerAt - 15 * 60 * 1000) && now <= (triggerAt + 15 * 60 * 1000)) {
+                    const distance = calculateDistance(currentLocation.lat, currentLocation.lng, locData.lat, locData.lng);
+                    if (distance <= 0.2 && (!lastWarningTime[reminder.id + '_arrival'] || now - lastWarningTime[reminder.id + '_arrival'] > 60 * 60 * 1000)) {
+                        triggerProactiveCall(reminder, 'location_arrival');
+                        setLastWarningTime(prev => ({ ...prev, [reminder.id + '_arrival']: now }));
                     }
                 }
             }
@@ -341,8 +350,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
             return R * c;
         };
 
-        const triggerProactiveCall = async (reminder: any) => {
-            console.log("TRIGGERING PROACTIVE CALL for:", reminder.title);
+        const triggerProactiveCall = async (reminder: any, reason: 'location_warning' | 'location_arrival' = 'location_warning') => {
+            console.log(`TRIGGERING PROACTIVE CALL (${reason}) for:`, reminder.title);
             const locData = reminder.location_data;
             
             // Create a call record
@@ -352,7 +361,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                 is_ai_call: true,
                 status: 'pending',
                 metadata: {
-                    reason: 'location_warning',
+                    reason: reason,
                     reminder_id: reminder.id,
                     reminder_title: reminder.title,
                     destination: locData.address,
