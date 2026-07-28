@@ -366,52 +366,104 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
     window.addEventListener('reminder-triggered', handleReminderTriggered);
     return () => window.removeEventListener('reminder-triggered', handleReminderTriggered);
-  // Continuous Native SpeechRecognition for voice commands (desligar / religar)
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+  }, []); // <-- FIM do useEffect do reminder-triggered
 
-    const recognition = new SpeechRecognition();
+  // ── Escuta local de comandos de voz (SEPARADO — não depende da IA) ──
+  // Este useEffect é independente. Usa a Web Speech API nativa do Chrome para
+  // detectar palavras-chave sem passar pelo servidor Gemini.
+  useEffect(() => {
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      addConnectionLog('warning', '[CMD VOZ] Não suportado neste navegador. Use Chrome.');
+      return;
+    }
+
+    addConnectionLog('info', '[CMD VOZ] Iniciando escuta local de comandos (desligar / religar)...');
+    const recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.interimResults = true; // Captura palavras enquanto o usuário fala, sem esperar silêncio
     recognition.lang = 'pt-BR';
+
+    let active = true; // flag para evitar restart após desmontagem
+
+    recognition.onstart = () => {
+      addConnectionLog('success', '[CMD VOZ] ✅ Ativo. Diga "desligar ligação" para fechar ou "religar" para reconectar.');
+    };
+
+    recognition.onend = () => {
+      // Chrome para automaticamente após ~60s de silêncio. Reinicia se ainda estiver na tela.
+      if (active) {
+        addConnectionLog('info', '[CMD VOZ] Reiniciando escuta local (Chrome parou automaticamente)...');
+        try { recognition.start(); } catch (e) {}
+      }
+    };
 
     recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          const text = event.results[i][0].transcript.toLowerCase();
-          console.log("[Native Voice Command]:", text);
+        const transcript = event.results[i][0].transcript.toLowerCase().trim();
+        const isFinal = event.results[i].isFinal;
+        const tag = isFinal ? '[FINAL]' : '[interim]';
 
-          if (text.includes("desligar") || text.includes("desliga") || text.includes("encerrar") || text.includes("parar")) {
-            console.log("Comando 'desligar' detectado via reconhecimento nativo.");
-            recognition.stop();
-            onEndCall('hangup_normal');
-            break;
-          }
+        // Log cada fala para o painel de depuração
+        addConnectionLog('info', `[CMD VOZ] ${tag} Ouvi: "${transcript}"`);
+        console.log(`[CMD VOZ] ${tag}:`, transcript);
 
-          if (!isConnectedRef.current) {
-            if (text.includes("religar") || text.includes("conectar") || text.includes("ligar novamente") || text.includes("tentar novamente")) {
-              console.log("Comando 'religar' detectado via reconhecimento nativo. Reconectando...");
-              addConnectionLog('info', 'Comando de voz "religar" recebido. Reconectando...');
-              recognition.stop();
-              startCall();
-              break;
-            }
-          }
+        // ── DESLIGAR ──
+        const wantsHangup =
+          transcript.includes('desligar') ||
+          transcript.includes('desliga') ||
+          transcript.includes('encerrar chamada') ||
+          transcript.includes('fechar chamada');
+
+        if (wantsHangup) {
+          addConnectionLog('success', `[CMD VOZ] 🔴 "desligar" detectado! Encerrando chamada...`);
+          console.log('[CMD VOZ] Desligando por comando de voz:', transcript);
+          active = false;
+          try { recognition.stop(); } catch (e) {}
+          onEndCall('hangup_normal');
+          return;
+        }
+
+        // ── RELIGAR (só se offline) ──
+        const wantsReconnect =
+          transcript.includes('religar') ||
+          transcript.includes('reconectar') ||
+          transcript.includes('ligar novamente') ||
+          transcript.includes('tentar novamente');
+
+        if (wantsReconnect && !isConnectedRef.current) {
+          addConnectionLog('success', `[CMD VOZ] 🟢 "religar" detectado! Reconectando...`);
+          console.log('[CMD VOZ] Religando por comando de voz:', transcript);
+          active = false;
+          try { recognition.stop(); } catch (e) {}
+          startCall();
+          return;
         }
       }
     };
 
-    recognition.onerror = (e: any) => console.log("Native SpeechRecognition error:", e);
-    
+    recognition.onerror = (e: any) => {
+      const err = e.error || String(e);
+      // 'no-speech' é normal — não mostrar como erro grave
+      if (err === 'no-speech') {
+        console.log('[CMD VOZ] Sem fala detectada (normal), aguardando...');
+      } else {
+        addConnectionLog('warning', `[CMD VOZ] ⚠️ Erro: ${err}`);
+        console.warn('[CMD VOZ] Erro SpeechRecognition:', e);
+      }
+    };
+
     try {
       recognition.start();
-    } catch (err) {}
+    } catch (err: any) {
+      addConnectionLog('warning', `[CMD VOZ] ❌ Falha ao iniciar: ${err.message || String(err)}`);
+    }
 
     return () => {
+      active = false;
       try { recognition.stop(); } catch (err) {}
     };
-  }, [onEndCall]);
+  }, [onEndCall]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startCall = async () => {
     try {
