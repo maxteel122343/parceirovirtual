@@ -661,6 +661,48 @@ function App() {
     return () => clearInterval(interval);
   }, [user, currentUserProfile, appState]);
 
+  // Global SpeechRecognition for dialing / starting calls by voice
+  useEffect(() => {
+    if (appState !== 'SETUP') return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'pt-BR';
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const text = event.results[i][0].transcript.toLowerCase();
+          console.log("[Global Voice Command]:", text);
+          
+          const partnerName = profile.name.toLowerCase();
+          if (text.includes("ligar para") || text.includes("chamar")) {
+            if (text.includes(partnerName) || (partnerName.includes("bebe") && text.includes("bebe")) || text.includes("bebê")) {
+              console.log(`Comando 'ligar para ${profile.name}' recebido. Iniciando chamada...`);
+              recognition.stop();
+              startCall();
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    recognition.onerror = (e: any) => console.log("Global SpeechRecognition error:", e);
+
+    try {
+      recognition.start();
+    } catch (err) {}
+
+    return () => {
+      try { recognition.stop(); } catch (err) {}
+    };
+  }, [appState, profile.name]);
+
   const handleCancelOutbound = async () => {
     if (activeCallId) await supabase.from('calls').update({ status: 'ended' }).eq('id', activeCallId);
     setAppState('SETUP');

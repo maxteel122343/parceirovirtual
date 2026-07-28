@@ -332,7 +332,44 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
     window.addEventListener('reminder-triggered', handleReminderTriggered);
     return () => window.removeEventListener('reminder-triggered', handleReminderTriggered);
-  }, []);
+  // Native SpeechRecognition for reconnection when offline
+  useEffect(() => {
+    if (isConnected) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'pt-BR';
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const text = event.results[i][0].transcript.toLowerCase();
+          console.log("[Voice Command Offline]:", text);
+          if (text.includes("religar") || text.includes("conectar") || text.includes("ligar novamente") || text.includes("tentar novamente")) {
+            console.log("Comando 'religar' detectado. Reconectando chamada...");
+            addConnectionLog('info', 'Comando de voz "religar" recebido. Reconectando...');
+            recognition.stop();
+            startCall();
+            break;
+          }
+        }
+      }
+    };
+
+    recognition.onerror = (e: any) => console.log("Offline SpeechRecognition error:", e);
+    
+    try {
+      recognition.start();
+    } catch (err) {}
+
+    return () => {
+      try { recognition.stop(); } catch (err) {}
+    };
+  }, [isConnected]);
 
   const startCall = async () => {
     try {
