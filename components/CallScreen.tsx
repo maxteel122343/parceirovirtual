@@ -142,13 +142,46 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   };
 
   const handleScheduleCallback = async (minutes: number | undefined, reason: string, target_person: string, days?: number, date?: string) => {
-    let triggerTime: number;
+    let triggerTime: number = NaN;
 
     if (date) {
-      triggerTime = new Date(date).getTime();
-      // Validate date
+      const cleanedDate = date.trim();
+      const timeRegex = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+      const match = cleanedDate.match(timeRegex);
+
+      if (match) {
+        const hours = parseInt(match[1], 10);
+        const minutesVal = parseInt(match[2], 10);
+        const secondsVal = match[3] ? parseInt(match[3], 10) : 0;
+
+        const parsedDate = new Date();
+        parsedDate.setHours(hours, minutesVal, secondsVal, 0);
+
+        if (parsedDate.getTime() <= Date.now()) {
+          parsedDate.setDate(parsedDate.getDate() + 1);
+        }
+        triggerTime = parsedDate.getTime();
+      } else {
+        triggerTime = new Date(cleanedDate).getTime();
+
+        if (isNaN(triggerTime)) {
+          const genericTimeRegex = /(\d{1,2})[h:](\d{2})/i;
+          const genericMatch = cleanedDate.match(genericTimeRegex);
+          if (genericMatch) {
+            const hours = parseInt(genericMatch[1], 10);
+            const minutesVal = parseInt(genericMatch[2], 10);
+            const parsedDate = new Date();
+            parsedDate.setHours(hours, minutesVal, 0, 0);
+            if (parsedDate.getTime() <= Date.now()) {
+              parsedDate.setDate(parsedDate.getDate() + 1);
+            }
+            triggerTime = parsedDate.getTime();
+          }
+        }
+      }
+
       if (isNaN(triggerTime)) {
-        return "Erro: Data inválida fornecida.";
+        return "Erro: Data/hora inválida. Formatos válidos: HH:MM, YYYY-MM-DD HH:MM.";
       }
     } else if (days) {
       triggerTime = Date.now() + (days * 24 * 60 * 60 * 1000);
