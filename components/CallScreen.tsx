@@ -303,41 +303,46 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
       }
 
-      // Request audio (required) separately from video (optional)
-      // This prevents mobile camera failures from breaking the entire call
-      const audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 16000,
-          channelCount: 1
-        }
-      });
-
-      let videoStream: MediaStream | null = null;
+      // Request audio and video in a single call for maximum compatibility on mobile devices (iOS/Android)
+      let stream: MediaStream;
+      let videoStreamForElement: MediaStream | null = null;
       try {
-        videoStream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            width: { ideal: 640 }, 
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 16000,
+            channelCount: 1
+          },
+          video: {
+            width: { ideal: 640 },
             height: { ideal: 480 },
             facingMode: 'user'
           }
         });
-      } catch (videoErr) {
-        console.warn('Camera not available, continuing with audio only:', videoErr);
+        // Split tracks to isolate the video stream for the local video tag
+        const videoTracks = stream.getVideoTracks();
+        if (videoTracks.length > 0) {
+          videoStreamForElement = new MediaStream(videoTracks);
+        }
+      } catch (mediaErr) {
+        console.warn('Failed to acquire audio and video together, trying audio only:', mediaErr);
+        // Fallback to audio-only if camera is unavailable or permission is denied
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 16000,
+            channelCount: 1
+          }
+        });
       }
-
-      // Merge audio + video tracks into one stream
-      const combinedTracks = [
-        ...audioStream.getTracks(),
-        ...(videoStream ? videoStream.getTracks() : [])
-      ];
-      const stream = new MediaStream(combinedTracks);
       mediaStreamRef.current = stream;
 
-      if (videoRef.current && videoStream) {
-        videoRef.current.srcObject = videoStream;
+      if (videoRef.current && videoStreamForElement) {
+        videoRef.current.srcObject = videoStreamForElement;
         await videoRef.current.play().catch(() => {});
       }
 
