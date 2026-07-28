@@ -967,6 +967,22 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             }, 1500);
           },
           onmessage: async (message: LiveServerMessage) => {
+            // ── TRATAMENTO DE INTERRUPÇÃO OFICIAL DO GEMINI ──
+            // Se o servidor avisar que o turno da IA foi interrompido, paramos imediatamente
+            // a reprodução dos buffers acumulados para não embolar o áudio antigo com a nova resposta.
+            if ((message.serverContent as any)?.interrupted) {
+              console.log('[Gemini Live] Servidor notificou interrupção. Limpando áudio em execução...');
+              sourcesRef.current.forEach(source => {
+                try { source.stop(); } catch (e) {}
+              });
+              sourcesRef.current.clear();
+              if (outputAudioContextRef.current) {
+                nextStartTimeRef.current = outputAudioContextRef.current.currentTime;
+              }
+              lastAiAudioTimeRef.current = Date.now();
+              setIsSpeaking(false);
+            }
+
             if (message.toolCall) {
               const responses = await Promise.all(message.toolCall.functionCalls.map(async fc => {
                 let result = "ok";
