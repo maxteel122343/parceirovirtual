@@ -491,6 +491,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         const { data: topics } = await supabase.from('topics').select('*').eq('user_id', user.id).eq('status', 'active');
         const { data: psych } = await supabase.from('user_profile_analysis').select('*').eq('user_id', user.id).single();
         const { data: ai_profile } = await supabase.from('ai_profiles').select('*').eq('user_id', user.id).single();
+        const { data: strategies } = await supabase.from('ai_psychological_strategies').select('*').eq('user_id', user.id);
         const targetOwnerId = profile.originalPartnerId || user.id;
         const { data: diary } = await supabase.from('reminders').select('*').eq('owner_id', targetOwnerId).eq('is_completed', false).order('trigger_at', { ascending: true });
 
@@ -509,6 +510,9 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
         if (ai_profile) {
           memoryContext += `\nSUA EVOLUÇÃO: Intimidade ${ai_profile.intimacy_level}%, Humor ${ai_profile.humor_usage}%`;
+        }
+        if (strategies && strategies.length > 0) {
+          memoryContext += `\nINSIGHTS PSICOLÓGICOS E TRAÇOS SALVOS DO USUÁRIO:\n${strategies.map(s => `- [Categoria: ${s.category}] ${s.recognition_phrase}`).join('\n')}`;
         }
         if (diary && diary.length > 0) {
           memoryContext += `\nAGENDA DO USUÁRIO:\n${diary.map(r => {
@@ -718,6 +722,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
         - Se ele disser que ainda não fez, mantenha-o pendente.
         - ATENÇÃO RIGOROSA: Você já tem acesso total à agenda ativa do usuário listada em "AGENDA DO USUÁRIO" na sua Memória Ativa. Se o usuário pedir para verificar, listar ou perguntar sobre a agenda/compromissos/lembretes, RESPONDA DIRETAMENTE usando os dados que você já possui. Nunca invente que não tem acesso, não faça perguntas desnecessárias de rodeio e não diga que a agenda não é sua. Seja direta e prestativa!
+        - PROATIVIDADE E CONSULTA À AGENDA: Não espere o usuário pedir para você consultar a agenda. Se a conversa der uma deixa ou se você estiver iniciando o MODO PRODUTIVO, consulte a "AGENDA DO USUÁRIO" imediatamente de forma rápida e cite os compromissos mais recentes ou o próximo compromisso importante de forma clara e objetiva. Não faça perguntas do tipo "você quer que eu olhe sua agenda?" ou "posso verificar seus compromissos?". Vá direto ao ponto e diga: "Olhei aqui na sua agenda e vi que você tem X agendado para Y. Como você está se organizando para isso?". Se o usuário não especificar um compromisso ao falar de agenda, cite de forma ágil o compromisso mais próximo ou os mais recentes, sem listá-los de forma cansativa. Mostre que você sabe de tudo que está lá.
 
         SISTEMA DE TRAÇOS ROTULADOS E ATENÇÃO DINÂMICA:
         - Ao registrar traços usando 'save_psychological_insight', utilize as categorias 'produtividade' (para atitudes ligadas a tarefas, foco e organização) e 'relacionamento' (para atitudes ligadas a carinho, ciúmes, lealdade e afeto).
