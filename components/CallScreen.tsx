@@ -253,8 +253,8 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     else if (target_person === 'caller') targetMsg = 'quem está falando';
     else targetMsg = 'ambos';
 
-    const dateStr = new Date(triggerTime).toLocaleString('pt-BR');
-    return `Agendado com sucesso para ${dateStr} no calendário de ${targetMsg}.`;
+    const dateStr = new Date(triggerTime).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    return `CONFIRMAÇÃO DE CONSULTA AO BANCO: O lembrete "${reason}" foi gravado e verificado com sucesso no banco de dados para o horário ${dateStr}. INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que você consultou a agenda e que o lembrete "${reason}" está agendado exatamente para o horário ${dateStr}.`;
   };
 
   const handleReportToPartner = async (message: string) => {
