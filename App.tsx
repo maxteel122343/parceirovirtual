@@ -325,7 +325,14 @@ function App() {
       }).select().single();
       if (data) {
         setActiveCallId(data.id);
-        setActivePartner(profile);
+        setActivePartner({
+          ...profile,
+          callerInfo: {
+            id: user.id,
+            name: currentUserProfile?.nickname || currentUserProfile?.display_name || 'Meu Humano',
+            isPartner: true
+          }
+        });
         setAppState('OUTBOUND_CALLING');
       }
     } else {
@@ -355,7 +362,14 @@ function App() {
       }).select().single();
       if (data) {
         setActiveCallId(data.id);
-        setActivePartner(profile);
+        setActivePartner({
+          ...profile,
+          callerInfo: {
+            id: user.id,
+            name: currentUserProfile?.nickname || currentUserProfile?.display_name || 'Meu Humano',
+            isPartner: true
+          }
+        });
         setCallReason('welcome');
         setAppState('CALLING');
       }
@@ -565,7 +579,12 @@ function App() {
               sexuality: 'Heterosexual',
               bestFriend: 'Humano',
               originalPartnerId: '', originalPartnerNumber: '', originalPartnerNickname: '',
-              currentPartnerId: '', currentPartnerNumber: '', currentPartnerNickname: ''
+              currentPartnerId: '', currentPartnerNumber: '', currentPartnerNickname: '',
+              callerInfo: {
+                id: cProfile.id,
+                name: cProfile.nickname || cProfile.display_name,
+                isPartner: cProfile.id === user.id
+              }
             };
             setActivePartner(incomingPartner);
             if (newCall.metadata?.reason === 'location_warning') {
@@ -595,6 +614,52 @@ function App() {
 
     return () => { channel.unsubscribe(); };
   }, [user]);
+
+  // Periodic calendar reminder monitor (triggers call when reminder hits triggerTime)
+  useEffect(() => {
+    if (!user) return;
+
+    const checkReminders = async () => {
+      const now = new Date().toISOString();
+      const { data: dueReminders } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('owner_id', user.id)
+        .eq('is_completed', false)
+        .lte('trigger_at', now);
+
+      if (dueReminders && dueReminders.length > 0) {
+        for (const reminder of dueReminders) {
+          // Immediately mark completed to prevent race conditions or double triggers
+          await supabase
+            .from('reminders')
+            .update({ is_completed: true })
+            .eq('id', reminder.id);
+
+          if (appState === 'CALLING') {
+            console.log("Usuário em chamada. Disparando interrupção de lembrete:", reminder.title);
+            window.dispatchEvent(new CustomEvent('reminder-triggered', { detail: { title: reminder.title } }));
+          } else {
+            console.log("Compromisso agendado atingido. Disparando ligação:", reminder.title);
+            setCallReason(`reminder:${reminder.title}`);
+            setActivePartner({
+              ...profileRef.current,
+              callerInfo: {
+                id: user.id,
+                name: currentUserProfile?.nickname || currentUserProfile?.display_name || 'Meu Humano',
+                isPartner: true
+              }
+            });
+            setAppState('INCOMING');
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(checkReminders, 10000);
+    checkReminders();
+    return () => clearInterval(interval);
+  }, [user, currentUserProfile, appState]);
 
   const handleCancelOutbound = async () => {
     if (activeCallId) await supabase.from('calls').update({ status: 'ended' }).eq('id', activeCallId);

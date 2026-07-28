@@ -293,6 +293,46 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
     }
   };
 
+  // Listen for reminders triggered during active call
+  useEffect(() => {
+    const handleReminderTriggered = (e: any) => {
+      const reminderTitle = e.detail?.title;
+      if (reminderTitle) {
+        console.log("Compromisso atingido durante a chamada! Injetando instrução de lembrete:", reminderTitle);
+        addConnectionLog('info', `Lembrete ativo disparado: "${reminderTitle}"`);
+        
+        // Immediately interrupt AI speaking
+        const ctx = outputAudioContextRef.current;
+        const gainNode = outputGainNodeRef.current;
+        if (ctx && gainNode) {
+          const now = ctx.currentTime;
+          gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+          setTimeout(() => {
+            sourcesRef.current.forEach(s => {
+              try { s.stop(); } catch (err) {}
+            });
+            sourcesRef.current.clear();
+            nextStartTimeRef.current = 0;
+            gainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+          }, 80);
+        }
+
+        // Send text input to Gemini session to pivot and talk about the reminder
+        sessionRef.current?.then((session: any) => {
+          session.sendRealtimeInput({
+            text: `[ALERTA DE COMPROMISSO IMEDIATO]: Pare o que você está dizendo agora. O compromisso agendado "${reminderTitle}" acaba de atingir o horário! Avise o usuário imediatamente sobre esse compromisso. Mude seu comportamento para o MODO PRODUTIVO: fique mais ativa, foque em ajudá-lo a atingir o objetivo, faça perguntas relacionadas a como ele vai se organizar, e dê total suporte a ele para concluir essa tarefa.`
+          });
+        }).catch((err: any) => {
+          console.error("Erro ao enviar comando de interrupção de compromisso:", err);
+        });
+      }
+    };
+
+    window.addEventListener('reminder-triggered', handleReminderTriggered);
+    return () => window.removeEventListener('reminder-triggered', handleReminderTriggered);
+  }, []);
+
   const startCall = async () => {
     try {
       addConnectionLog('info', 'Iniciando chamada...');
@@ -909,6 +949,13 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
             if (inputTranscript) {
               userCaptionBufferRef.current += inputTranscript;
+              const lowerTranscript = inputTranscript.toLowerCase();
+              if (lowerTranscript.includes("desligar") || lowerTranscript.includes("desliga") || lowerTranscript.includes("encerrar chamada") || lowerTranscript.includes("encerrar")) {
+                console.log("Comando de voz 'desligar' detectado. Encerrando chamada...");
+                addConnectionLog('info', 'Comando de voz "desligar" recebido. Encerrando chamada.');
+                onEndCall('hangup_normal');
+                return;
+              }
             }
 
             if (isInputFinished && userCaptionBufferRef.current.trim()) {
