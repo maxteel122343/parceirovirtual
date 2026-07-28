@@ -68,8 +68,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const partnerVideoRef = useRef<HTMLDivElement>(null);
 
   // Audio Refs
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const outputGainNodeRef = useRef<GainNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
@@ -347,22 +346,22 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       }
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioContextClass();
+      audioContextRef.current = audioCtx;
 
       // --- INPUT SETUP ---
-      inputAudioContextRef.current = new AudioContextClass();
-      const userAnalyser = inputAudioContextRef.current.createAnalyser();
+      const userAnalyser = audioCtx.createAnalyser();
       userAnalyser.fftSize = 64; // Small size for simple volume check
       userAnalyser.smoothingTimeConstant = 0.5;
       userAnalyserRef.current = userAnalyser;
 
       // --- OUTPUT SETUP ---
-      outputAudioContextRef.current = new AudioContextClass();
-      const aiAnalyser = outputAudioContextRef.current.createAnalyser();
+      const aiAnalyser = audioCtx.createAnalyser();
       aiAnalyser.fftSize = 64;
       aiAnalyser.smoothingTimeConstant = 0.5;
       aiAnalyserRef.current = aiAnalyser;
 
-      const outputNode = outputAudioContextRef.current.createGain();
+      const outputNode = audioCtx.createGain();
       outputNode.gain.value = 1.0;
       outputGainNodeRef.current = outputNode;
 
@@ -405,7 +404,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
       // Chain: Source (Created later) -> AI Analyser -> Output Node -> Destination
       aiAnalyser.connect(outputNode);
-      outputNode.connect(outputAudioContextRef.current.destination);
+      outputNode.connect(audioCtx.destination);
 
       const ai = new GoogleGenAI({ 
         apiKey: apiKey,
@@ -674,19 +673,19 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               resolvedSessionRef.current = session;
             });
 
-            if (outputAudioContextRef.current?.state === 'suspended') {
-              outputAudioContextRef.current.resume();
+            if (audioContextRef.current?.state === 'suspended') {
+              audioContextRef.current.resume();
             }
 
-            if (!inputAudioContextRef.current || !stream || !userAnalyserRef.current) return;
+            if (!audioContextRef.current || !stream || !userAnalyserRef.current) return;
 
-            const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(2048, 1, 1);
+            const source = audioContextRef.current.createMediaStreamSource(stream);
+            const scriptProcessor = audioContextRef.current.createScriptProcessor(2048, 1, 1);
 
             // Chain: Source -> User Analyser -> ScriptProcessor -> Destination
             source.connect(userAnalyserRef.current);
             userAnalyserRef.current.connect(scriptProcessor);
-            scriptProcessor.connect(inputAudioContextRef.current.destination);
+            scriptProcessor.connect(audioContextRef.current.destination);
 
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
@@ -870,20 +869,20 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             const base64Audio = audioPart ? (audioPart as any).inlineData.data : undefined;
 
             if (base64Audio) {
-              if (!outputAudioContextRef.current) return;
+              if (!audioContextRef.current) return;
 
-              if (outputAudioContextRef.current.state === 'suspended') {
-                await outputAudioContextRef.current.resume();
+              if (audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
               }
 
-              const curTime = outputAudioContextRef.current.currentTime;
+              const curTime = audioContextRef.current.currentTime;
               if (nextStartTimeRef.current < curTime + 0.05) {
                 // Se estamos iniciando ou houve um atraso (gap), adicione um buffer de lookahead de 150ms
                 nextStartTimeRef.current = curTime + 0.15;
               }
-              const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContextRef.current, 24000, 1);
+              const audioBuffer = await decodeAudioData(decode(base64Audio), audioContextRef.current, 24000, 1);
 
-              const source = outputAudioContextRef.current.createBufferSource();
+              const source = audioContextRef.current.createBufferSource();
               source.buffer = audioBuffer;
 
               // Connect source to Analyser first, so we can visualize it
@@ -1032,7 +1031,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               }
             }
             if (message.serverContent?.interrupted) {
-              const ctx = outputAudioContextRef.current;
+              const ctx = audioContextRef.current;
               const gainNode = outputGainNodeRef.current;
 
               if (ctx && gainNode) {
@@ -1247,8 +1246,7 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
     }
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
-    if (inputAudioContextRef.current) inputAudioContextRef.current.close();
-    if (outputAudioContextRef.current) outputAudioContextRef.current.close();
+    if (audioContextRef.current) audioContextRef.current.close();
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
     if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
     if (visionTimerRef.current) clearTimeout(visionTimerRef.current);
@@ -1279,7 +1277,7 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
   }
 
   function createBlob(data: Float32Array): BlobData {
-    const inputSampleRate = inputAudioContextRef.current?.sampleRate || 48000;
+    const inputSampleRate = audioContextRef.current?.sampleRate || 48000;
     const downsampled = downsampleBuffer(data, inputSampleRate, 16000);
     const l = downsampled.length;
     const int16 = new Int16Array(l);
