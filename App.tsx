@@ -34,12 +34,15 @@ const DEFAULT_PROFILE: PartnerProfile = {
   ai_number: '',
   captionsEnabled: false,
   captionLanguage: PlatformLanguage.EN,
-  custom_ais: []
+  custom_ais: [],
+  autoStartCallEnabled: true
 };
 
 const DEFAULT_GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
 
 type AppState = 'SETUP' | 'CALLING' | 'WAITING' | 'INCOMING' | 'OUTBOUND_CALLING' | 'HUMAN_CALL';
+
+let hasAutoStartedCall = false;
 
 function App() {
   const [appState, setAppState] = useState<AppState>('SETUP');
@@ -48,6 +51,7 @@ function App() {
     language: (localStorage.getItem('pref_ai_language') as PlatformLanguage) || DEFAULT_PROFILE.language,
     captionLanguage: (localStorage.getItem('pref_caption_language') as PlatformLanguage) || DEFAULT_PROFILE.captionLanguage,
     captionsEnabled: localStorage.getItem('pref_captions_enabled') === 'true',
+    autoStartCallEnabled: localStorage.getItem('pref_autostart_call_enabled') !== 'false',
   }));
   const [callReason, setCallReason] = useState<string>('initial');
   const [nextScheduledCall, setNextScheduledCall] = useState<ScheduledCall | null>(null);
@@ -144,7 +148,8 @@ function App() {
     localStorage.setItem('pref_ai_language', profile.language || PlatformLanguage.PT);
     if (profile.captionLanguage) localStorage.setItem('pref_caption_language', profile.captionLanguage);
     localStorage.setItem('pref_captions_enabled', String(profile.captionsEnabled ?? false));
-  }, [profile.language, profile.captionLanguage, profile.captionsEnabled]);
+    localStorage.setItem('pref_autostart_call_enabled', String(profile.autoStartCallEnabled ?? false));
+  }, [profile.language, profile.captionLanguage, profile.captionsEnabled, profile.autoStartCallEnabled]);
 
   useEffect(() => {
     localStorage.setItem('GEMINI_API_KEY', apiKey);
@@ -328,6 +333,16 @@ function App() {
       setAppState('CALLING');
     }
   };
+
+  // Auto-start call on mount if configured and not already triggered in this session
+  useEffect(() => {
+    if (profile.autoStartCallEnabled && apiKey && appState === 'SETUP') {
+      if (!hasAutoStartedCall) {
+        hasAutoStartedCall = true;
+        startCall();
+      }
+    }
+  }, [profile.autoStartCallEnabled, apiKey, appState]);
 
   const startWelcomeCall = async () => {
     if (!profile.personality.trim()) return;

@@ -66,6 +66,50 @@ export const IncomingCallScreen: React.FC<IncomingCallScreenProps> = ({ profile,
         }
     }, [callReason, onAiPickup]);
 
+    React.useEffect(() => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) return;
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'pt-BR';
+
+        recognition.onresult = (event: any) => {
+            const transcript = Array.from(event.results)
+                .map((result: any) => result[0].transcript)
+                .join('')
+                .toLowerCase();
+
+            console.log("Comando de voz (recebimento):", transcript);
+
+            const triggerWords = ['atender', 'atende', 'aceitar', 'aceita', 'oi', 'hello', 'responder', 'atenda', 'atende chamadas'];
+            if (triggerWords.some(word => transcript.includes(word))) {
+                console.log("Comando de voz aceito! Atendendo...");
+                try {
+                    recognition.stop();
+                } catch (e) {}
+                onAccept();
+            }
+        };
+
+        recognition.onerror = (err: any) => {
+            console.warn("Erro na detecção de voz:", err);
+        };
+
+        try {
+            recognition.start();
+        } catch (e) {
+            console.error("Falha ao iniciar reconhecimento:", e);
+        }
+
+        return () => {
+            try {
+                recognition.stop();
+            } catch (e) {}
+        };
+    }, [onAccept]);
+
     return (
         <div className={`fixed inset-0 z-50 flex flex-col items-center justify-between p-6 sm:p-12 overflow-hidden ${isPink ? 'bg-[#fffafa] text-[#912d4a]' : isDark ? 'bg-[#0b0c10] text-white' : 'bg-[#f4f7fa] text-slate-900'}`}>
             {/* Blurred Background */}
@@ -126,6 +170,12 @@ export const IncomingCallScreen: React.FC<IncomingCallScreenProps> = ({ profile,
                     </div>
                     <span className="font-bold text-xs uppercase tracking-widest opacity-40">Accept</span>
                 </button>
+            </div>
+
+            {/* Voice command guidance */}
+            <div className="z-10 mb-8 flex items-center gap-2 opacity-50 bg-black/10 dark:bg-white/5 px-4 py-2 rounded-xl backdrop-blur-sm">
+                <span className="animate-pulse">🎙️</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">Diga "Atender" ou "Aceitar" para atender com a voz</span>
             </div>
         </div>
     );

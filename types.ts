@@ -138,6 +138,7 @@ export interface PartnerProfile {
   ephemeralHumanChats?: boolean;
   isAiChatInterceptEnabled?: boolean;
   autoWelcomeEnabled?: boolean;
+  autoStartCallEnabled?: boolean;
 }
 
 export const DEFAULT_RINGTONES = [
