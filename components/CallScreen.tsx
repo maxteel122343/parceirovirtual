@@ -858,16 +858,18 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               const rms = Math.sqrt(sum / inputData.length);
 
               // Detect contextually if AI is currently playing audio
-              // Grace period: 150ms (era 600ms) — reduzido para nao cortar o inicio da fala do usuario
-              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 150);
+              // Grace period: 500ms — essencial para evitar que ruídos ambientais ou eco da própria voz da IA
+              // acionem a detecção de interrupção do Gemini Live no meio de uma frase.
+              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 500);
 
-              // Noise gate: threshold baixado de 0.008 para 0.003 para capturar vozes mais baixas
+              // Noise gate estrito durante a fala da IA: se a IA estiver falando, enviamos áudio totalmente zerado (silêncio)
+              // para impedir que o servidor Gemini corte o áudio dela achando que o usuário interrompeu.
               let processedData = inputData;
-              if (rms < 0.003 || isAiSpeaking) {
+              if (isAiSpeaking || rms < 0.005) {
                 processedData = new Float32Array(inputData.length);
               }
 
-              if (rms > 0.003 && !isAiSpeaking) { // Usuario esta falando
+              if (rms > 0.005 && !isAiSpeaking) { // Usuário está falando genuinamente (IA em silêncio)
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
 
