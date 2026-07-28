@@ -840,7 +840,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             if (!inputAudioContextRef.current || !stream || !userAnalyserRef.current) return;
 
             const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(2048, 1, 1);
+            // Buffer menor (512) = processa audio a cada ~32ms em vez de ~128ms
+            // Isso garante que falas curtas nao sejam perdidas entre callbacks
+            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(512, 1, 1);
 
             // Chain: Source -> User Analyser -> ScriptProcessor -> Destination
             source.connect(userAnalyserRef.current);
@@ -855,16 +857,17 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
               const rms = Math.sqrt(sum / inputData.length);
 
-              // Detect contextually if AI is currently playing audio (with 600ms gap bridging)
-              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 600);
+              // Detect contextually if AI is currently playing audio
+              // Grace period: 150ms (era 600ms) — reduzido para nao cortar o inicio da fala do usuario
+              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 150);
 
-              // Noise gate: if volume is below threshold or AI is speaking, send zeroed audio to prevent false interruptions
+              // Noise gate: threshold baixado de 0.008 para 0.003 para capturar vozes mais baixas
               let processedData = inputData;
-              if (rms < 0.008 || isAiSpeaking) {
+              if (rms < 0.003 || isAiSpeaking) {
                 processedData = new Float32Array(inputData.length);
               }
 
-              if (rms > 0.008 && !isAiSpeaking) { // User is talking (ignoring background noise/breathing)
+              if (rms > 0.003 && !isAiSpeaking) { // Usuario esta falando
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
 
