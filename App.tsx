@@ -88,8 +88,6 @@ function App() {
   const pendingCallIsHumanRef = useRef<boolean>(false);
   const isOutboundHumanCallRef = useRef<boolean>(false);
   const [isHumanCallCaller, setIsHumanCallCaller] = useState<boolean>(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isProfileReady, setIsProfileReady] = useState(false);
 
   const profileRef = useRef<PartnerProfile>(profile);
   useEffect(() => {
@@ -99,12 +97,10 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      setAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -142,17 +138,11 @@ function App() {
               setProfile(() => ({ ...DEFAULT_PROFILE, ...settings }));
             }
           }
-          setIsProfileReady(true);
-        }).catch(() => {
-          setIsProfileReady(true);
         });
     } else {
       setCurrentUserProfile(null);
-      if (!authLoading) {
-        setIsProfileReady(true);
-      }
     }
-  }, [user, authLoading]);
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('pref_ai_language', profile.language || PlatformLanguage.PT);
@@ -346,13 +336,13 @@ function App() {
 
   // Auto-start call on mount if configured and not already triggered in this session
   useEffect(() => {
-    if (isProfileReady && profile.autoStartCallEnabled && apiKey && appState === 'SETUP') {
+    if (profile.autoStartCallEnabled && apiKey && appState === 'SETUP') {
       if (!hasAutoStartedCall) {
         hasAutoStartedCall = true;
         startCall();
       }
     }
-  }, [isProfileReady, profile.autoStartCallEnabled, apiKey, appState]);
+  }, [profile.autoStartCallEnabled, apiKey, appState]);
 
   const startWelcomeCall = async () => {
     if (!profile.personality.trim()) return;

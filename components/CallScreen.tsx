@@ -61,7 +61,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   // Audio Levels for Visualization
   const [micLevel, setMicLevel] = useState(0);
   const [aiLevel, setAiLevel] = useState(0);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1093,7 +1092,6 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
     } catch (error: any) {
       console.error(error);
-      setConnectionError(error.message || "Erro de inicialização ou permissão bloqueada");
     }
   };
 
@@ -1314,34 +1312,6 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
 
   return (
     <div className={`h-screen w-full flex flex-col overflow-hidden relative ${isPink ? 'bg-[#fffafa]' : isDark ? 'bg-[#0b0c10]' : 'bg-[#f4f7fa]'}`}>
-      {connectionError && (
-        <div className="absolute inset-0 z-[200] flex items-center justify-center p-6 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-300">
-          <div className={`w-full max-w-md p-8 rounded-[2.5rem] border text-center shadow-2xl ${isPink ? 'bg-white border-pink-100' : isDark ? 'bg-[#15181e] border-white/5' : 'bg-white border-slate-100'}`}>
-            <span className="text-5xl block mb-4">🎙️</span>
-            <h3 className={`text-xl font-black italic tracking-tighter uppercase mb-2 ${isPink ? 'text-pink-600' : 'text-blue-500'}`}>Mídia ou Permissão Ocupada</h3>
-            <p className={`text-[12px] opacity-70 mb-6 leading-relaxed ${isPink ? 'text-[#912d4a]' : 'text-slate-300'}`}>
-              Para iniciar a chamada automática, clique no botão abaixo para interagir e autorizar o acesso à câmera e microfone.
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => {
-                  setConnectionError(null);
-                  startCall();
-                }}
-                className={`w-full py-4 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${isPink ? 'bg-pink-600 shadow-pink-500/20' : 'bg-blue-600 shadow-blue-500/20'}`}
-              >
-                Autorizar e Conectar
-              </button>
-              <button
-                onClick={() => onEndCall('hangup_normal')}
-                className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all ${isDark ? 'bg-white/5 text-white/60 hover:bg-white/10' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                Voltar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <style>{`
         @keyframes progress {
           0% { transform: translateX(-100%); }
