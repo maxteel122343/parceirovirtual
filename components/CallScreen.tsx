@@ -840,9 +840,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             if (!inputAudioContextRef.current || !stream || !userAnalyserRef.current) return;
 
             const source = inputAudioContextRef.current.createMediaStreamSource(stream);
-            // Buffer menor (512) = processa audio a cada ~32ms em vez de ~128ms
-            // Isso garante que falas curtas nao sejam perdidas entre callbacks
-            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(512, 1, 1);
+            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(2048, 1, 1);
 
             // Chain: Source -> User Analyser -> ScriptProcessor -> Destination
             source.connect(userAnalyserRef.current);
@@ -857,23 +855,11 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
               const rms = Math.sqrt(sum / inputData.length);
 
-              // Detect contextually if AI is currently playing audio
-              // Grace period: 500ms — essencial para evitar que ruídos ambientais ou eco da própria voz da IA
-              // acionem a detecção de interrupção do Gemini Live no meio de uma frase.
-              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 500);
-
-              // Noise gate estrito durante a fala da IA: se a IA estiver falando, enviamos áudio totalmente zerado (silêncio)
-              // para impedir que o servidor Gemini corte o áudio dela achando que o usuário interrompeu.
-              let processedData = inputData;
-              if (isAiSpeaking || rms < 0.005) {
-                processedData = new Float32Array(inputData.length);
-              }
-
-              if (rms > 0.005 && !isAiSpeaking) { // Usuário está falando genuinamente (IA em silêncio)
+              // Detect audio volume for user tone/talking indicator
+              if (rms > 0.01) {
                 isUserTalkingRef.current = true;
                 lastSilencePromptRef.current = Date.now();
 
-                // Categorize sound amplitude
                 if (rms > 0.08) {
                   userToneRef.current = 'loud';
                 } else if (rms < 0.032) {
@@ -886,63 +872,19 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   clearTimeout(visionTimerRef.current);
                   visionTimerRef.current = null;
                 }
-              } else { // User is silent
-                // Se a IA estiver falando, o silêncio do usuário é esperado. 
-                // Mantemos o timer de silêncio resetado para que a contagem de silêncio comece só após a IA terminar.
-                if (isAiSpeaking) {
-                  lastSilencePromptRef.current = Date.now();
-                }
+              } else {
                 if (isUserTalkingRef.current && Date.now() - lastSilencePromptRef.current > 15000 && !isSpeaking && aiLevel < 5) {
-                  // Silent for 15 seconds after talking, and AI is not speaking
                   isUserTalkingRef.current = false;
                   lastSilencePromptRef.current = Date.now();
                   sessionPromise.then(session => {
-                    const recentGestures = gestureLogRef.current
-                      ? gestureLogRef.current
-                        .filter(g => Date.now() - g.timestamp < 30000)
-                        .map(g => g.gesture)
-                        .join(', ')
-                      : "";
-
-                    const gestureContext = recentGestures ? `\n[MEMÓRIA DE GESTOS RECENTES]: Você observou estes gestos nos últimos 30 segundos: ${recentGestures}. Analise-os em conjunto com o silêncio atual.` : "";
-
-                    const patternContext = (personalityPatternsRef.current && personalityPatternsRef.current.length > 0)
-                      ? `\n[PADRÕES EM OBSERVAÇÃO]: ${personalityPatternsRef.current.map(p => `${p.pattern} (Status: ${p.status})`).join('; ')}`
-                      : "";
-
-                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio por um momento. Se achar apropriado, continue o assunto anterior de forma natural ou aguarde ele falar de forma receptiva e calma. ${gestureContext} ${patternContext}` });
+                    session.sendRealtimeInput({ text: `[SILÊNCIO DETECTADO]: O usuário está em silêncio por um momento.` });
                   });
                 }
-
-                // ── AUTO-DESCONEXÃO POR SILÊNCIO PROLONGADO ──────────────────
-                // DESATIVADO por padrão. Para ativar: mude FEATURE_AUTO_DISCONNECT = true
-                // no topo do arquivo.
-                if (FEATURE_AUTO_DISCONNECT) {
-                  const silenceDuration = Date.now() - lastSilencePromptRef.current;
-
-                  // Após AUTO_DISCONNECT_WARN_MS de silêncio total → avisa o usuário
-                  if (silenceDuration > AUTO_DISCONNECT_WARN_MS && silenceDuration < AUTO_DISCONNECT_WARN_MS + 500) {
-                    console.log('[AUTO-DISCONNECT] Silêncio prolongado detectado. Avisando usuário...');
-                    addConnectionLog('warning', '[AUTO-DESCONEXÃO] 3 min de silêncio. Avisando usuário...');
-                    sessionPromise.then(session => {
-                      session.sendRealtimeInput({
-                        text: `[AUTO-DESCONEXÃO EMINENTE]: O usuário está em silêncio há 3 minutos. Avise-o carinhosamente que você vai desligar em 30 segundos para economizar créditos, a menos que ele diga algo. Fale em tom gentil e levemente preocupado.`
-                      });
-                    });
-                  }
-
-                  // Após AUTO_DISCONNECT_WARN_MS + AUTO_DISCONNECT_GRACE_MS → desconecta
-                  if (silenceDuration > AUTO_DISCONNECT_WARN_MS + AUTO_DISCONNECT_GRACE_MS) {
-                    console.log('[AUTO-DISCONNECT] Timeout atingido. Desconectando chamada por inatividade.');
-                    addConnectionLog('warning', '[AUTO-DESCONEXÃO] Chamada encerrada automaticamente por inatividade.');
-                    onEndCall('hangup_normal');
-                  }
-                }
-                // ─────────────────────────────────────────────────────────────
               }
 
+              // Send raw PCM audio to Gemini Live session continuously
               if (isConnectedRef.current && resolvedSessionRef.current) {
-                const pcmBlob = createBlob(processedData);
+                const pcmBlob = createBlob(inputData);
                 resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };
