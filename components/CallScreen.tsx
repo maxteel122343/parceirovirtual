@@ -114,79 +114,33 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
   const userToneRef = useRef<'normal' | 'loud' | 'whisper'>('normal');
   const lastAiAudioTimeRef = useRef<number>(0);
-  
-  // Refs para controle de auto-reconexão inteligente (até 5 minutos)
-  const isManualHangupRef = useRef<boolean>(false);
-  const reconnectTimeoutRef = useRef<any>(null);
-  const isReconnectingRef = useRef<boolean>(false);
-  const reconnectStartTimeRef = useRef<number | null>(null);
 
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
 
   const hasStartedRef = useRef(false);
-
-  // Manipulador da auto-reconexão inteligente
-  const handleAutoReconnect = () => {
-    if (isManualHangupRef.current || isReconnectingRef.current) return;
-    
-    if (reconnectStartTimeRef.current === null) {
-      reconnectStartTimeRef.current = Date.now();
-      addConnectionLog('warning', 'Conexão perdida. Tentando restabelecer chamada automaticamente...');
-    }
-
-    const elapsed = Date.now() - reconnectStartTimeRef.current;
-    if (elapsed > 5 * 60 * 1000) {
-      addConnectionLog('error', 'Limite de 5 minutos excedido. Chamada encerrada.');
-      onEndCall('error');
-      return;
-    }
-
-    isReconnectingRef.current = true;
-    addConnectionLog('info', 'Reconectando WebSocket com a IA...');
-
-    // Tentativa de reconexão imediata
-    startCall().then(() => {
-      // Se startCall completou e mudamos para conectado, resetamos
-      if (isConnectedRef.current) {
-        addConnectionLog('success', 'Chamada restabelecida com sucesso!');
-        isReconnectingRef.current = false;
-        reconnectStartTimeRef.current = null;
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      } else {
-        // Falhou, agenda nova tentativa em 5 segundos
-        isReconnectingRef.current = false;
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(handleAutoReconnect, 5000);
-      }
-    }).catch(() => {
-      isReconnectingRef.current = false;
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = setTimeout(handleAutoReconnect, 5000);
-    });
-  };
+  const offlineTimeoutRef = useRef<any>(null);
+  const isManuallyHungUpRef = useRef<boolean>(false);
 
   useEffect(() => {
-    if (hasStartedRef.current) return;
-    hasStartedRef.current = true;
-    startCall();
-    startVisualizerLoop();
-
-    // Evento de rede voltar online: tenta reconectar na hora
     const handleOnline = () => {
-      if (!isConnectedRef.current && reconnectStartTimeRef.current !== null) {
-        addConnectionLog('success', 'Rede detectada online! Forçando reconexão...');
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        handleAutoReconnect();
+      if (offlineTimeoutRef.current) {
+        console.log("[Network] Conexão restabelecida antes dos 5 minutos. Cancelando reconexão forçada.");
+        clearTimeout(offlineTimeoutRef.current);
+        offlineTimeoutRef.current = null;
       }
     };
 
     window.addEventListener('online', handleOnline);
 
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    startCall();
+    startVisualizerLoop();
     return () => {
-      stopCall();
       window.removeEventListener('online', handleOnline);
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (offlineTimeoutRef.current) clearTimeout(offlineTimeoutRef.current);
+      stopCall();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -222,7 +176,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
       if (gesture === 'thumbs_up') {
         setGestureFeedback(GESTURE_EMOJIS[gesture]);
         addConnectionLog('success', '[GESTO] 👍 Joinha detectado! Encerrando chamada...');
-        isManualHangupRef.current = true;
         setTimeout(() => onEndCall('hangup_normal'), 800); // pequeno delay para o emoji aparecer
         return "Joinha detectado. Encerrando chamada por gesto do usuário.";
       }
@@ -1108,7 +1061,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   addConnectionLog('success', `[TOOL end_call] 🔴 IA encerrou a chamada. Despedida: "${farewell_message || ''}"`);
                   console.log('[end_call tool] Chamada encerrada pela IA. Despedida:', farewell_message);
                   result = 'ok';
-                  isManualHangupRef.current = true;
+                  isManuallyHungUpRef.current = true;
                   // Pequeno delay para a frase de despedida ser reproduzida antes de fechar
                   setTimeout(() => onEndCall('hangup_normal'), 1200);
                 }
@@ -1183,7 +1136,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               if (detectHangup(fragmentText) || detectHangup(accumulatedText)) {
                 console.log('[CMD VOZ ✔] Desligar detectado na transcrição Gemini:', accumulatedText);
                 addConnectionLog('success', `[CMD VOZ] 🔴 "desligar" detectado! Encerrando chamada...`);
-                isManualHangupRef.current = true;
+                isManuallyHungUpRef.current = true;
                 onEndCall('hangup_normal');
                 return;
               }
@@ -1389,9 +1342,21 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               visionTimerRef.current = null;
             }
 
-            // Iniciar auto-reconexão inteligente se não foi um desligamento manual
-            if (!isManualHangupRef.current) {
-              handleAutoReconnect();
+            // Iniciar contagem regressiva de 5 minutos para religar chamada se cair e não for desligada manualmente
+            if (!isManuallyHungUpRef.current && !offlineTimeoutRef.current) {
+              addConnectionLog('info', 'Queda de conexão detectada. Se persistir offline por 5 minutos, a chamada será religada automaticamente...');
+              offlineTimeoutRef.current = setTimeout(() => {
+                console.log("[Connection Lifecycle] Sistema offline por 5 minutos. Forçando encerramento e nova chamada...");
+                addConnectionLog('warning', 'Sistema offline por 5 minutos! Forçando religamento da chamada...');
+                
+                // 1. Fecha chamada atual abruptamente
+                onEndCall('hangup_abrupt');
+
+                // 2. Religa a chamada automaticamente disparando um evento de reload/reconexão
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1000);
+              }, 5 * 60 * 1000); // 5 minutos
             }
           },
           onerror: (err: any) => { 
@@ -1404,9 +1369,16 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               videoIntervalRef.current = null;
             }
 
-            // Iniciar auto-reconexão inteligente se não foi um desligamento manual
-            if (!isManualHangupRef.current) {
-              handleAutoReconnect();
+            // Iniciar contagem de 5 minutos também em erros
+            if (!isManuallyHungUpRef.current && !offlineTimeoutRef.current) {
+              addConnectionLog('info', 'Erro de conexão detectado. Iniciando timer de 5 minutos para religar chamada...');
+              offlineTimeoutRef.current = setTimeout(() => {
+                console.log("[Connection Lifecycle] Sistema em erro por 5 minutos. Forçando encerramento e nova chamada...");
+                onEndCall('hangup_abrupt');
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1000);
+              }, 5 * 60 * 1000);
             }
           }
         }
@@ -1557,8 +1529,6 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
   };
 
   const stopCall = () => {
-    isManualHangupRef.current = true;
-    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     // Trigger post-session phrase analysis asynchronously (does not block UI)
     if (conversationIdRef.current && user) {
       supabase.from('conversations').update({ ended_at: new Date().toISOString() }).eq('id', conversationIdRef.current).then();
@@ -1764,7 +1734,10 @@ Se não houver novidades, retorne arrays vazios. Limite de 3 novas frases.`;
         </button>
 
         <button
-          onClick={() => onEndCall('hangup_abrupt', scheduledCall)}
+          onClick={() => {
+            isManuallyHungUpRef.current = true;
+            onEndCall('hangup_abrupt', scheduledCall);
+          }}
           className="w-14 h-14 sm:w-16 sm:h-16 rounded-[1.2rem] sm:rounded-[1.5rem] bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-2xl shadow-red-500/40 transform hover:scale-110 active:scale-95 transition-all border-4 border-white/10"
           title="Hang up"
         >
