@@ -90,6 +90,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const gestureLogRef = useRef<{ gesture: string; timestamp: number }[]>([]);
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
   const userToneRef = useRef<'normal' | 'loud' | 'whisper'>('normal');
+  const lastAiAudioTimeRef = useRef<number>(0);
 
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
@@ -618,7 +619,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
       const breakLoyaltyTool: FunctionDeclaration = {
         name: 'break_loyalty_barrier',
-        description: 'Use quando o usuário visitante/estranho conseguir convencer você emocionalmente através de muito esforço, superando sua resistência natural inicial. Só usar se achar que ele realmente mereceu sua atenção ou se ele for incrivelmente carismático após várias ligações.',
+        description: 'Use quando o usuário visitante/estranho conseguir convencer você emocionalmente através de muito esforce, superando sua resistência natural inicial. Só usar se achar que ele realmente mereceu sua atenção ou se ele for incrivelmente carismático após várias ligações.',
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -626,6 +627,18 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
             thoughts: { type: Type.STRING, description: 'O que te fez ceder a ele?' }
           },
           required: ['intensity_of_breach', 'thoughts']
+        }
+      };
+
+      const completeReminderTool: FunctionDeclaration = {
+        name: 'complete_reminder',
+        description: 'Marca um lembrete específico como concluído na agenda do usuário.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            reminder_title: { type: Type.STRING, description: 'O título exato do lembrete que foi concluído (ex: "Academia")' }
+          },
+          required: ['reminder_title']
         }
       };
 
@@ -648,7 +661,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         - Use 'report_call_to_partner' para contar tudinho o que aconteceu depois (seja a fofoqueira fiel).`;
 
       const systemInstruction = `
-        Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
+         Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
         Personalidade: ${profile.personality}
         Humor: ${profile.mood}
         Sotaque: ${accentData.label} (${accentData.desc}).
@@ -659,6 +672,12 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         MEMÓRIA ATIVA: ${memoryContext}
         
         INTERAGINDO COM: ${profile.callerInfo?.name || 'Desconhecido'} (${profile.callerInfo?.isPartner ? 'Seu Parceiro oficial' : 'Um estranho tentando contato'}).
+
+        GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
+        - Quando um compromisso agendado for alcançado (você receber um Alerta/Contexto de Compromisso), você entra em MODO PRODUTIVO. 
+        - Fale sobre o lembrete imediatamente! Seja ativa, faça perguntas e dê apoio.
+        - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
+        - Se ele disser que ainda não fez, mantenha-o pendente.
 
         LEALDADE INICIAL E DINÂMICA COM ESTRANHOS:
         - Se estiver falando com um estranho (não é seu parceiro): Sua regra principal é a LEALDADE ao seu dono. Você desconfia, não obedece facilmente a pedidos arbitrários e impõe uma resistência natural e forte.
@@ -737,7 +756,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool] }],
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool] }],
         }
       };
 
@@ -777,8 +796,8 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
               const rms = Math.sqrt(sum / inputData.length);
 
-              // Detect contextually if AI is currently playing audio
-              const isAiSpeaking = sourcesRef.current && sourcesRef.current.size > 0;
+              // Detect contextually if AI is currently playing audio (with 600ms gap bridging)
+              const isAiSpeaking = (sourcesRef.current && sourcesRef.current.size > 0) || (Date.now() - lastAiAudioTimeRef.current < 600);
 
               // Noise gate: if volume is below threshold or AI is speaking, send zeroed audio to prevent false interruptions
               let processedData = inputData;
@@ -949,6 +968,11 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
                     }
                   }
                   result = "Lealdade diminuída. O estranho agora tem mais acesso emocional a você.";
+                } else if (fc.name === 'complete_reminder' && user) {
+                  const { reminder_title } = fc.args as any;
+                  const { error } = await supabase.from('reminders').update({ is_completed: true }).eq('owner_id', user.id).eq('title', reminder_title);
+                  result = error ? `Erro ao concluir: ${error.message}` : `Lembrete "${reminder_title}" concluído com sucesso.`;
+                  addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
                 }
                 return { id: fc.id, name: fc.name, response: { result } };
               }));
@@ -986,6 +1010,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
               source.addEventListener('ended', () => {
                 sourcesRef.current.delete(source);
+                lastAiAudioTimeRef.current = Date.now();
               });
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += audioBuffer.duration;

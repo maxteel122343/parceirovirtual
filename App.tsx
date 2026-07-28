@@ -78,6 +78,7 @@ function App() {
   const [activePartner, setActivePartner] = useState<PartnerProfile | null>(null);
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
+  const triggeredReminderIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     activeCallIdRef.current = activeCallId;
@@ -630,11 +631,9 @@ function App() {
 
       if (dueReminders && dueReminders.length > 0) {
         for (const reminder of dueReminders) {
-          // Immediately mark completed to prevent race conditions or double triggers
-          await supabase
-            .from('reminders')
-            .update({ is_completed: true })
-            .eq('id', reminder.id);
+          // Skip if already triggered in this browser session
+          if (triggeredReminderIdsRef.current.includes(reminder.id)) continue;
+          triggeredReminderIdsRef.current.push(reminder.id);
 
           if (appState === 'CALLING') {
             console.log("Usuário em chamada. Disparando interrupção de lembrete:", reminder.title);
