@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import { PartnerProfile, MOOD_EMOJIS, VOICE_META, ACCENT_META, LANGUAGE_META, ScheduledCall } from '../types';
 import { supabase } from '../supabaseClient';
+import { addConnectionLog } from '../logger';
 
 interface CallScreenProps {
   profile: PartnerProfile;
@@ -294,6 +295,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
 
   const startCall = async () => {
     try {
+      addConnectionLog('info', 'Iniciando chamada...');
       if (user) {
         const { data } = await supabase.from('conversations').insert({ user_id: user.id, type: 'call' }).select().single();
         if (data) {
@@ -302,8 +304,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         }
       }
 
-      // Request audio (required) separately from video (optional)
-      // This prevents mobile camera failures from breaking the entire call
+      addConnectionLog('info', 'Solicitando acesso ao microfone...');
       const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -313,9 +314,11 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
           channelCount: 1
         }
       });
+      addConnectionLog('success', 'Microfone conectado com sucesso');
 
       let videoStream: MediaStream | null = null;
       try {
+        addConnectionLog('info', 'Solicitando acesso à câmera...');
         videoStream = await navigator.mediaDevices.getUserMedia({
           video: { 
             width: { ideal: 640 }, 
@@ -323,7 +326,9 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
             facingMode: 'user'
           }
         });
+        addConnectionLog('success', 'Câmera conectada com sucesso');
       } catch (videoErr) {
+        addConnectionLog('warning', 'Câmera não disponível, continuando em modo apenas áudio');
         console.warn('Camera not available, continuing with audio only:', videoErr);
       }
 
@@ -656,11 +661,13 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
         }
       };
 
+      addConnectionLog('info', 'Iniciando conexão WebSocket com Gemini Live API...');
       const sessionPromise = ai.live.connect({
         ...config,
         callbacks: {
           onopen: () => {
             console.log("Gemini Live Connected");
+            addConnectionLog('success', 'WebSocket conectado ao Gemini Live!');
             setConnectionStatus(true);
 
             // Store resolved session synchronously for direct audio streaming
@@ -1068,6 +1075,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
           },
           onclose: (event: any) => {
             console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
+            addConnectionLog('warning', `WebSocket fechado. Código: ${event?.code || 'sem código'}, Razão: ${event?.reason || 'sem razão'}`);
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
@@ -1078,8 +1086,10 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
               visionTimerRef.current = null;
             }
           },
-          onerror: (err) => { 
+          onerror: (err: any) => { 
             console.error("WebSocket error:", err); 
+            const errMsg = err?.message || (err instanceof Event ? 'Falha na conexão do WebSocket (Verifique se sua API Key é válida e tem acesso ao modelo live)' : String(err));
+            addConnectionLog('error', `Erro no WebSocket: ${errMsg}`);
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
@@ -1092,6 +1102,7 @@ Categorias válidas: comportamento, emocao, ciume, humor, habito, preferencia, p
 
     } catch (error: any) {
       console.error(error);
+      addConnectionLog('error', `Falha ao iniciar chamada: ${error?.message || error}`);
     }
   };
 

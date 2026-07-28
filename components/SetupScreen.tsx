@@ -9,6 +9,7 @@ import { supabase } from '../supabaseClient';
 import { ChatWindow } from './ChatWindow';
 import { MapTab } from './MapTab';
 import { InvitesTab } from './InvitesTab';
+import { addConnectionLog } from '../logger';
 
 interface SetupScreenProps {
     profile: PartnerProfile;
@@ -27,6 +28,16 @@ interface SetupScreenProps {
 }
 
 export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, onStartCall, onCallPartner, nextScheduledCall, apiKey, setApiKey, user, currentUserProfile, onUpdateUserProfile, showAuth, setShowAuth, onStartWelcomeCall }) => {
+    const [diagnostics, setDiagnostics] = useState<any[]>(() => (window as any).connectionLogs || []);
+
+    useEffect(() => {
+        const handleLogUpdate = () => {
+            setDiagnostics([...((window as any).connectionLogs || [])]);
+        };
+        window.addEventListener('connection-log-updated', handleLogUpdate);
+        return () => window.removeEventListener('connection-log-updated', handleLogUpdate);
+    }, []);
+
     const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites'>(() => {
         const saved = sessionStorage.getItem('warm_activeTab');
         return (saved as any) || 'gallery';
@@ -2108,6 +2119,53 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                             : "Desativado: O app abrirá normalmente na tela de início."}
                                                     </p>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Section: Diagnostic Logs / Painel de Diagnóstico */}
+                                        <div className={`p-10 rounded-[3rem] border ${cardClasses} relative overflow-hidden`}>
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 blur-3xl rounded-full" />
+                                            <div className="flex justify-between items-start mb-6 relative z-10">
+                                                <div>
+                                                    <h3 className="text-sm font-bold uppercase tracking-widest text-amber-500">Diagnóstico de Conexão</h3>
+                                                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30 mt-2 italic">Histórico de eventos e erros do WebSocket/Mídia (Mobile)</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        (window as any).connectionLogs = [];
+                                                        window.dispatchEvent(new CustomEvent('connection-log-updated'));
+                                                    }}
+                                                    className="px-4 py-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                                    title="Limpar Logs"
+                                                >
+                                                    Limpar
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="relative z-10 space-y-4">
+                                                <div className={`p-4 rounded-[2rem] border ${inputClasses} border-opacity-30 max-h-60 overflow-y-auto no-scrollbar font-mono text-[9px] leading-relaxed space-y-2`}>
+                                                    {diagnostics.length === 0 ? (
+                                                        <p className="text-center opacity-40 italic">Nenhum evento registrado ainda. Inicie uma chamada para ver os logs.</p>
+                                                    ) : (
+                                                        diagnostics.slice().reverse().map((log: any, i: number) => (
+                                                            <div key={i} className="flex gap-2 border-b border-white/5 pb-1">
+                                                                <span className="opacity-45">[{log.timestamp}]</span>
+                                                                <span className={`font-black uppercase ${log.type === 'error' ? 'text-red-500' : log.type === 'warning' ? 'text-yellow-500' : log.type === 'success' ? 'text-green-500' : 'text-blue-400'}`}>{log.type}</span>
+                                                                <span className="opacity-80 break-all">{log.message}</span>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        const text = diagnostics.map((log: any) => `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
+                                                        navigator.clipboard.writeText(text);
+                                                        alert("Logs copiados para a área de transferência!");
+                                                    }}
+                                                    className="w-full py-4 bg-amber-500/10 text-amber-500 rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all hover:bg-amber-500 hover:text-white"
+                                                >
+                                                    Copiar Logs
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
