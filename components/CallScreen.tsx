@@ -62,10 +62,12 @@ const AUTO_DISCONNECT_GRACE_MS = 30 * 1000;      // +30 segundos → desconecta
 export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onEndCall, onScoreChange, apiKey, user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const isConnectedRef = useRef(false);
-  const setConnectionStatus = (val: boolean) => {
+  // Usar ref para evitar closure stale dentro dos callbacks do WebSocket
+  const setConnectionStatusRef = useRef((val: boolean) => {
     setIsConnected(val);
     isConnectedRef.current = val;
-  };
+  });
+  const setConnectionStatus = (val: boolean) => setConnectionStatusRef.current(val);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
   const [scheduledCall, setScheduledCall] = useState<ScheduledCall | undefined>(undefined);
@@ -122,6 +124,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const offlineTimeoutRef = useRef<any>(null);
   const isManuallyHungUpRef = useRef<boolean>(false);
 
+  // Listener de reconexão de rede (separado do startup para ter cleanup correto)
   useEffect(() => {
     const handleOnline = () => {
       if (offlineTimeoutRef.current) {
@@ -130,15 +133,16 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         offlineTimeoutRef.current = null;
       }
     };
-
     window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
+  useEffect(() => {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     startCall();
     startVisualizerLoop();
     return () => {
-      window.removeEventListener('online', handleOnline);
       if (offlineTimeoutRef.current) clearTimeout(offlineTimeoutRef.current);
       stopCall();
     };
