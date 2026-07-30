@@ -9,8 +9,8 @@ import { supabase } from '../supabaseClient';
 import { ChatWindow } from './ChatWindow';
 import { MapTab } from './MapTab';
 import { InvitesTab } from './InvitesTab';
-import { TasksTab } from './TasksTab';
 import { addConnectionLog } from '../logger';
+import { TasksTab } from './TasksTab';
 
 interface SetupScreenProps {
     profile: PartnerProfile;
@@ -829,10 +829,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                 <nav className="flex-1 w-full px-3 space-y-2 overflow-y-auto no-scrollbar">
                     {[
                         { id: 'dashboard', label: 'Início', icon: '🏠' },
-                        { id: 'tasks', label: 'Tarefas', icon: '📋' },
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
-                        { id: 'calendar', label: 'Agenda', icon: '📅' }
+                        { id: 'calendar', label: 'Agenda', icon: '📅' },
+                        { id: 'tasks', label: 'Tarefas', icon: '📋' }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -1180,12 +1180,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'tasks' && (
-                            <div className="w-full">
-                                <TasksTab isDark={isDark} user={user} profile={profile} />
                             </div>
                         )}
 
@@ -2192,6 +2186,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
                         {activeTab === 'chats' && (
                             <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-280px)]"><QuickChatTab currentUser={user} profile={profile} onCallPartner={onCallPartner} onOpenChat={(target, isAi) => setActiveChat({ profile: target, isAi })} isDark={isDark} /></div>
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-220px)] overflow-hidden rounded-[2rem]">
+                                <TasksTab />
+                            </div>
                         )}
                     </div>
                 </div>

@@ -1,339 +1,483 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../supabaseClient';
-import { Reminder, PartnerProfile, UserProfile } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
 
-// ─── TASK TYPES ───────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TaskStatus =
-  | 'em_aberto' | 'pendente' | 'concluido' | 'concluido_fora'
-  | 'adiado' | 'nao_concluido' | 'falhou';
+type TaskStatus =
+  | 'em_aberto'
+  | 'pendente'
+  | 'concluido'
+  | 'concluido_fora'
+  | 'adiado'
+  | 'nao_concluido'
+  | 'falhou';
 
-export type TaskPriority = 'A' | 'B' | 'C' | 'D';
-export type TaskType = 'manutencao' | 'normal' | 'organizacao' | 'infra' | 'intervalo';
-export type RecurrenceMode = 'exata' | 'flexivel';
+type TaskType = 'manutencao' | 'normal' | 'organizacao' | 'infra' | 'intervalo';
+type TaskClass = 'A' | 'B' | 'C';
+type RecurrenceMode = 'exata' | 'flexivel' | 'unica';
 
-export interface Subtask { id: string; title: string; done: boolean; }
-export interface GainedProperty { name: string; value: string; }
+interface Subtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
 
-export interface Task {
+interface Task {
   id: string;
   name: string;
   category: string;
   status: TaskStatus;
-  priority: TaskPriority;
-  type: TaskType;
+  taskClass: TaskClass;
+  taskType: TaskType;
   recurrenceMode: RecurrenceMode;
-  recurrenceValue: string;
-  nextExecution: string;       // datetime-local value or ISO
-  estimatedDuration: number;   // minutes
+  recurrenceExactTime?: string;
+  recurrenceExactDays?: string[];
+  recurrenceFlexHours?: number;
   timesCompleted: number;
-  location: string;
+  estimatedMinutes: number;
+  lastCompletedAt?: string;
+  locality: string;
   subtasks: Subtask[];
-  gainedProperties: GainedProperty[];
+  rewards: string;
   notes: string;
-  lastCompletedAt: string | null;
   createdAt: string;
-  // Links to calendar
-  reminderId: string | null;   // Supabase reminders.id linked to this task
 }
 
-// ─── META MAPS ────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string; emoji: string }> = {
-  em_aberto:      { label: 'Em Aberto',              color: 'text-sky-400',    bg: 'bg-sky-500/15 border-sky-500/30',     emoji: '🔵' },
-  pendente:       { label: 'Pendente',               color: 'text-amber-400',  bg: 'bg-amber-500/15 border-amber-500/30', emoji: '⏳' },
-  concluido:      { label: 'Concluído',              color: 'text-emerald-400',bg: 'bg-emerald-500/15 border-emerald-500/30', emoji: '✅' },
-  concluido_fora: { label: 'Concluído Fora do Prazo',color: 'text-orange-400', bg: 'bg-orange-500/15 border-orange-500/30', emoji: '🕐' },
-  adiado:         { label: 'Adiado',                 color: 'text-purple-400', bg: 'bg-purple-500/15 border-purple-500/30', emoji: '📌' },
-  nao_concluido:  { label: 'Não Concluído',          color: 'text-red-400',    bg: 'bg-red-500/15 border-red-500/30',     emoji: '❌' },
-  falhou:         { label: 'Falhou',                 color: 'text-rose-400',   bg: 'bg-rose-500/15 border-rose-500/30',   emoji: '💥' },
+const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string; icon: string }> = {
+  em_aberto:      { label: 'Em Aberto',            color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/20',   icon: '🔵' },
+  pendente:       { label: 'Pendente',              color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', icon: '⏳' },
+  concluido:      { label: 'Concluído',             color: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/20',  icon: '✅' },
+  concluido_fora: { label: 'Concluído Fora do Prazo', color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', icon: '⚠️' },
+  adiado:         { label: 'Adiado',                color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20', icon: '⏭️' },
+  nao_concluido:  { label: 'Não Concluído',         color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20',    icon: '❌' },
+  falhou:         { label: 'Falhou',                color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/20', icon: '💀' },
 };
 
-const PRIORITY_META: Record<TaskPriority, { label: string; color: string; bg: string }> = {
-  A: { label: 'Classe A', color: 'text-red-400',    bg: 'bg-red-500/20 border-red-500/40' },
-  B: { label: 'Classe B', color: 'text-orange-400', bg: 'bg-orange-500/20 border-orange-500/40' },
-  C: { label: 'Classe C', color: 'text-yellow-400', bg: 'bg-yellow-500/20 border-yellow-500/40' },
-  D: { label: 'Classe D', color: 'text-slate-400',  bg: 'bg-slate-500/20 border-slate-500/40' },
+const TYPE_META: Record<TaskType, { label: string; icon: string; color: string }> = {
+  manutencao:  { label: 'Manutenção',  icon: '🔧', color: 'text-amber-400' },
+  normal:      { label: 'Normal',      icon: '📝', color: 'text-blue-400' },
+  organizacao: { label: 'Organização', icon: '📦', color: 'text-teal-400' },
+  infra:       { label: 'Infra',       icon: '🏗️', color: 'text-indigo-400' },
+  intervalo:   { label: 'Intervalo',   icon: '🎮', color: 'text-pink-400' },
 };
 
-const TYPE_META: Record<TaskType, { label: string; emoji: string }> = {
-  manutencao:  { label: 'Manutenção',  emoji: '🔧' },
-  normal:      { label: 'Normal',      emoji: '📋' },
-  organizacao: { label: 'Organização', emoji: '🗂️' },
-  infra:       { label: 'Infra',       emoji: '🏗️' },
-  intervalo:   { label: 'Intervalo',   emoji: '☕' },
+const CLASS_META: Record<TaskClass, { label: string; color: string; bg: string }> = {
+  A: { label: 'Classe A', color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20' },
+  B: { label: 'Classe B', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' },
+  C: { label: 'Classe C', color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/20' },
 };
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+// ─── Helper ───────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'warmconn_tasks_v3';
-const loadTasks = (): Task[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } };
-const saveTasks = (tasks: Task[]) => localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+const genId = () => Math.random().toString(36).slice(2, 10);
 
-const emptyTask = (): Task => ({
-  id: uid(), name: '', category: '', status: 'em_aberto', priority: 'B',
-  type: 'normal', recurrenceMode: 'flexivel', recurrenceValue: '', nextExecution: '',
-  estimatedDuration: 15, timesCompleted: 0, location: '', subtasks: [],
-  gainedProperties: [], notes: '', lastCompletedAt: null,
-  createdAt: new Date().toISOString(), reminderId: null,
+const elapsedSince = (isoDate?: string): string => {
+  if (!isoDate) return '—';
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  return `${h}h ${m}m`;
+};
+
+const blankTask = (): Omit<Task, 'id' | 'createdAt'> => ({
+  name: '',
+  category: '',
+  status: 'em_aberto',
+  taskClass: 'B',
+  taskType: 'normal',
+  recurrenceMode: 'unica',
+  recurrenceExactTime: '',
+  recurrenceExactDays: [],
+  recurrenceFlexHours: 24,
+  timesCompleted: 0,
+  estimatedMinutes: 30,
+  lastCompletedAt: undefined,
+  locality: '',
+  subtasks: [],
+  rewards: '',
+  notes: '',
 });
 
-const formatInertia = (lastCompletedAt: string | null, createdAt: string): string => {
-  const base = lastCompletedAt ? new Date(lastCompletedAt) : new Date(createdAt);
-  const diffH = Math.floor((Date.now() - base.getTime()) / 3600000);
-  const diffM = Math.floor(((Date.now() - base.getTime()) % 3600000) / 60000);
-  if (diffH >= 24) return `${Math.floor(diffH / 24)}d ${diffH % 24}h`;
-  if (diffH >= 1)  return `${diffH}h ${diffM}m`;
-  return `${diffM}m`;
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const Badge: React.FC<{ className?: string; children: React.ReactNode }> = ({ className = '', children }) => (
+  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${className}`}>
+    {children}
+  </span>
+);
+
+const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 mb-1.5">{children}</p>
+);
+
+// ─── Inertia Clock ────────────────────────────────────────────────────────────
+
+const InertiaClock: React.FC<{ lastCompletedAt?: string }> = ({ lastCompletedAt }) => {
+  const [elapsed, setElapsed] = useState(elapsedSince(lastCompletedAt));
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(elapsedSince(lastCompletedAt)), 60000);
+    return () => clearInterval(t);
+  }, [lastCompletedAt]);
+  return <span>{elapsed}</span>;
 };
 
-const formatDuration = (m: number) =>
-  !m ? '--' : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}`;
-
-// ─── FIELD GROUP HELPER ───────────────────────────────────────────────────────
-
-const FieldGroup: React.FC<{ label: string; isDark: boolean; children: React.ReactNode }> = ({ label, isDark, children }) => (
-  <div>
-    <label className={`text-[10px] font-black uppercase tracking-widest block mb-2 ml-1 ${isDark ? 'text-white/30' : 'text-slate-400'}`}>{label}</label>
-    {children}
-  </div>
-);
-
-const SectionHeader: React.FC<{ letter: string; title: string; isDark: boolean }> = ({ letter, title, isDark }) => (
-  <div className="flex items-center gap-3 mt-2">
-    <div className="w-7 h-7 rounded-xl bg-blue-600 flex items-center justify-center text-white text-xs font-black flex-shrink-0">{letter}</div>
-    <span className={`text-xs font-black uppercase tracking-[0.2em] ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{title}</span>
-    <div className={`flex-1 h-px ${isDark ? 'bg-white/5' : 'bg-slate-100'}`} />
-  </div>
-);
-
-// ─── TASK FORM MODAL ─────────────────────────────────────────────────────────
+// ─── Task Form Modal ──────────────────────────────────────────────────────────
 
 interface TaskFormProps {
-  task: Task;
-  onChange: (t: Task) => void;
-  onSave: () => void;
+  initial?: Task;
+  onSave: (task: Task) => void;
   onClose: () => void;
-  isDark: boolean;
-  hasLinkedReminder: boolean;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ task, onChange, onSave, onClose, isDark, hasLinkedReminder }) => {
-  const set = (partial: Partial<Task>) => onChange({ ...task, ...partial });
+const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) => {
+  const [form, setForm] = useState<Omit<Task, 'id' | 'createdAt'>>(
+    initial ? { ...initial } : blankTask()
+  );
+  const [subtaskInput, setSubtaskInput] = useState('');
+  const [activeSection, setActiveSection] = useState<'main' | 'time' | 'context' | 'metrics'>('main');
+
+  const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) =>
+    setForm(prev => ({ ...prev, [key]: val }));
 
   const addSubtask = () => {
-    if (task.subtasks.length >= 5) return;
-    set({ subtasks: [...task.subtasks, { id: uid(), title: '', done: false }] });
+    if (!subtaskInput.trim() || form.subtasks.length >= 5) return;
+    set('subtasks', [...form.subtasks, { id: genId(), title: subtaskInput.trim(), done: false }]);
+    setSubtaskInput('');
   };
-  const updateSubtask = (id: string, title: string) =>
-    set({ subtasks: task.subtasks.map(s => s.id === id ? { ...s, title } : s) });
-  const removeSubtask = (id: string) =>
-    set({ subtasks: task.subtasks.filter(s => s.id !== id) });
-  const addGain = () =>
-    set({ gainedProperties: [...task.gainedProperties, { name: '', value: '' }] });
-  const updateGain = (i: number, key: 'name' | 'value', val: string) =>
-    set({ gainedProperties: task.gainedProperties.map((g, idx) => idx === i ? { ...g, [key]: val } : g) });
-  const removeGain = (i: number) =>
-    set({ gainedProperties: task.gainedProperties.filter((_, idx) => idx !== i) });
 
-  const card = isDark ? 'bg-[#0e1117] border-white/5' : 'bg-white border-slate-100';
-  const inp  = isDark
-    ? 'bg-[#1a1d26] border-white/10 text-white placeholder-white/20 focus:border-blue-500/60'
-    : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-blue-400';
+  const toggleSubtask = (id: string) =>
+    set('subtasks', form.subtasks.map(s => s.id === id ? { ...s, done: !s.done } : s));
+
+  const removeSubtask = (id: string) =>
+    set('subtasks', form.subtasks.filter(s => s.id !== id));
+
+  const save = () => {
+    if (!form.name.trim()) return;
+    onSave({
+      ...form,
+      id: initial?.id || genId(),
+      createdAt: initial?.createdAt || new Date().toISOString(),
+    });
+    onClose();
+  };
+
+  const sectionBtnCls = (s: typeof activeSection) =>
+    `px-4 py-2 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all ${
+      activeSection === s ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'opacity-40 hover:opacity-70'
+    }`;
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(16px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className={`relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl border shadow-2xl p-8 ${card}`}
-        style={{ scrollbarWidth: 'thin' }}>
-
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="w-full max-w-2xl bg-[#12131a] border border-white/8 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className={`text-2xl font-black tracking-tighter ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              {task.name || '✨ Nova Tarefa'}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <p className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-white/30' : 'text-slate-400'}`}>Planilha de Execução</p>
-              {hasLinkedReminder && (
-                <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  📅 Vinculada ao Calendário
-                </span>
-              )}
+        <div className="px-8 pt-8 pb-5 border-b border-white/5">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h2 className="text-xl font-black tracking-tighter text-white">
+                {initial ? '✏️ Editar Tarefa' : '➕ Nova Tarefa'}
+              </h2>
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mt-1">Sistema de Gestão de Tarefas</p>
             </div>
+            <button onClick={onClose} className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all">✕</button>
           </div>
-          <button onClick={onClose} className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition-all hover:scale-110 ${isDark ? 'border-white/10 hover:bg-white/5 text-white/60' : 'border-slate-200 hover:bg-slate-100 text-slate-500'}`}>✕</button>
+          <div className="flex gap-2 flex-wrap">
+            {(['main', 'time', 'context', 'metrics'] as const).map(s => (
+              <button key={s} onClick={() => setActiveSection(s)} className={sectionBtnCls(s)}>
+                {s === 'main' ? '📋 Principal' : s === 'time' ? '⏱️ Tempo' : s === 'context' ? '📍 Contexto' : '📊 Métricas'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-6">
-          {/* ── A: Core Data ── */}
-          <SectionHeader letter="A" title="Dados Principais" isDark={isDark} />
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
 
-          <FieldGroup label="Nome da Tarefa" isDark={isDark}>
-            <input type="text" value={task.name} onChange={e => set({ name: e.target.value })}
-              placeholder="Ex: Limpar a pia do banheiro"
-              className={`w-full px-5 py-4 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-          </FieldGroup>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldGroup label="Categoria" isDark={isDark}>
-              <input type="text" value={task.category} onChange={e => set({ category: e.target.value })}
-                placeholder="Ex: Casa, Saúde, Trabalho"
-                className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-            </FieldGroup>
-            <FieldGroup label="Localidade" isDark={isDark}>
-              <input type="text" value={task.location} onChange={e => set({ location: e.target.value })}
-                placeholder="Ex: Banheiro, PC, Cozinha"
-                className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-            </FieldGroup>
-          </div>
-
-          {/* Status */}
-          <FieldGroup label="Status Atual" isDark={isDark}>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(STATUS_META) as TaskStatus[]).map(s => {
-                const m = STATUS_META[s];
-                const active = task.status === s;
-                return (
-                  <button key={s} onClick={() => set({ status: s })}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${active ? m.bg + ' ' + m.color : isDark ? 'border-white/5 text-white/30 hover:border-white/20' : 'border-slate-100 text-slate-400 hover:border-slate-300'}`}>
-                    <span>{m.emoji}</span> {m.label}
-                  </button>
-                );
-              })}
-            </div>
-          </FieldGroup>
-
-          {/* Priority + Type */}
-          <div className="grid grid-cols-2 gap-4">
-            <FieldGroup label="Classe / Prioridade" isDark={isDark}>
-              <div className="flex gap-2">
-                {(['A', 'B', 'C', 'D'] as TaskPriority[]).map(p => {
-                  const m = PRIORITY_META[p];
-                  const active = task.priority === p;
-                  return (
-                    <button key={p} onClick={() => set({ priority: p })}
-                      className={`flex-1 py-3 rounded-xl border text-xs font-black transition-all ${active ? m.bg + ' ' + m.color : isDark ? 'border-white/5 text-white/20 hover:text-white/60' : 'border-slate-100 text-slate-300 hover:text-slate-600'}`}>
-                      {p}
-                    </button>
-                  );
-                })}
+          {activeSection === 'main' && (
+            <>
+              {/* Name */}
+              <div>
+                <FieldLabel>Nome da Tarefa *</FieldLabel>
+                <input
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  placeholder="Ex: Limpar a pia"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                />
               </div>
-            </FieldGroup>
-            <FieldGroup label="Tipo de Tarefa" isDark={isDark}>
-              <select value={task.type} onChange={e => set({ type: e.target.value as TaskType })}
-                className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`}>
-                {(Object.keys(TYPE_META) as TaskType[]).map(t => (
-                  <option key={t} value={t}>{TYPE_META[t].emoji} {TYPE_META[t].label}</option>
-                ))}
-              </select>
-            </FieldGroup>
-          </div>
 
-          {/* ── B: Time & Frequency ── */}
-          <SectionHeader letter="B" title="Tempo, Frequência e Métricas" isDark={isDark} />
-
-          <FieldGroup label="Modo de Recorrência" isDark={isDark}>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {(['exata', 'flexivel'] as RecurrenceMode[]).map(r => (
-                <button key={r} onClick={() => set({ recurrenceMode: r })}
-                  className={`py-3 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${task.recurrenceMode === r ? 'bg-blue-600 border-blue-600 text-white' : isDark ? 'border-white/10 text-white/30 hover:border-white/30' : 'border-slate-200 text-slate-400 hover:border-slate-400'}`}>
-                  {r === 'exata' ? '📅 Exata' : '🔄 Flexível'}
-                </button>
-              ))}
-            </div>
-            <input type="text" value={task.recurrenceValue} onChange={e => set({ recurrenceValue: e.target.value })}
-              placeholder={task.recurrenceMode === 'exata' ? 'Ex: Toda segunda-feira às 14:00' : 'Ex: A cada 24 horas'}
-              className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-          </FieldGroup>
-
-          {/* Calendar Integration notice */}
-          <div className={`rounded-2xl border p-4 flex items-start gap-3 ${isDark ? 'bg-blue-500/5 border-blue-500/20' : 'bg-blue-50 border-blue-200'}`}>
-            <span className="text-xl mt-0.5">📅</span>
-            <div>
-              <p className={`text-xs font-black uppercase tracking-widest ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>Integrado ao Calendário</p>
-              <p className={`text-[11px] mt-1 ${isDark ? 'text-white/40' : 'text-slate-500'}`}>
-                Ao definir a <strong>Próxima Execução</strong>, um lembrete é criado automaticamente na sua Agenda. Quando o horário chegar, a IA será alertada durante a ligação para te avisar em voz alta.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldGroup label="Próxima Execução (→ Agenda)" isDark={isDark}>
-              <input type="datetime-local" value={task.nextExecution} onChange={e => set({ nextExecution: e.target.value })}
-                className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-            </FieldGroup>
-            <FieldGroup label="Duração Estimada (min)" isDark={isDark}>
-              <input type="number" min={1} value={task.estimatedDuration} onChange={e => set({ estimatedDuration: Number(e.target.value) })}
-                className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-semibold transition-all outline-none ${inp}`} />
-            </FieldGroup>
-          </div>
-
-          {/* ── C: Context, Subtasks, Rewards ── */}
-          <SectionHeader letter="C" title="Contexto, Subtarefas e Recompensas" isDark={isDark} />
-
-          <FieldGroup label={`Subtarefas (${task.subtasks.length}/5)`} isDark={isDark}>
-            <div className="space-y-2">
-              {task.subtasks.map((st, i) => (
-                <div key={st.id} className="flex items-center gap-2">
-                  <span className={`text-xs font-black w-5 text-center ${isDark ? 'text-white/30' : 'text-slate-300'}`}>{i + 1}</span>
-                  <input type="text" value={st.title} onChange={e => updateSubtask(st.id, e.target.value)}
-                    placeholder={`Subpasso ${i + 1}...`}
-                    className={`flex-1 px-4 py-2.5 rounded-xl border text-xs font-semibold transition-all outline-none ${inp}`} />
-                  <button onClick={() => removeSubtask(st.id)} className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100">✕</button>
+              {/* Category + Locality */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Categoria</FieldLabel>
+                  <input
+                    value={form.category}
+                    onChange={e => set('category', e.target.value)}
+                    placeholder="Ex: Saúde, Casa, Trabalho"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                  />
                 </div>
-              ))}
-              {task.subtasks.length < 5 && (
-                <button onClick={addSubtask}
-                  className={`w-full py-2.5 rounded-xl border border-dashed text-xs font-bold transition-all ${isDark ? 'border-white/10 text-white/30 hover:border-blue-500/50 hover:text-blue-400' : 'border-slate-200 text-slate-400 hover:border-blue-400 hover:text-blue-600'}`}>
-                  + Adicionar Subpasso
-                </button>
+                <div>
+                  <FieldLabel>Localidade</FieldLabel>
+                  <input
+                    value={form.locality}
+                    onChange={e => set('locality', e.target.value)}
+                    placeholder="Ex: Banheiro, PC, Cozinha"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <FieldLabel>Status</FieldLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(STATUS_META) as [TaskStatus, typeof STATUS_META[TaskStatus]][]).map(([key, meta]) => (
+                    <button
+                      key={key}
+                      onClick={() => set('status', key)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                        form.status === key ? `${meta.bg} ${meta.color} font-black border-current` : 'bg-white/3 border-white/5 opacity-40 hover:opacity-70'
+                      }`}
+                    >
+                      <span>{meta.icon}</span>
+                      <span className="text-[10px] font-bold truncate">{meta.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Priority Class */}
+              <div>
+                <FieldLabel>Classe / Prioridade</FieldLabel>
+                <div className="flex gap-3">
+                  {(['A', 'B', 'C'] as TaskClass[]).map(c => (
+                    <button
+                      key={c}
+                      onClick={() => set('taskClass', c)}
+                      className={`flex-1 py-3 rounded-xl border text-[11px] font-black uppercase transition-all ${
+                        form.taskClass === c ? `${CLASS_META[c].bg} ${CLASS_META[c].color}` : 'bg-white/3 border-white/5 opacity-40 hover:opacity-70 text-white'
+                      }`}
+                    >
+                      {CLASS_META[c].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Task Type */}
+              <div>
+                <FieldLabel>Tipo de Tarefa</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.entries(TYPE_META) as [TaskType, typeof TYPE_META[TaskType]][]).map(([key, meta]) => (
+                    <button
+                      key={key}
+                      onClick={() => set('taskType', key)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-black uppercase transition-all ${
+                        form.taskType === key ? `bg-indigo-600/20 border-indigo-500/40 text-indigo-300` : 'bg-white/3 border-white/5 text-white/40 hover:text-white/70'
+                      }`}
+                    >
+                      <span>{meta.icon}</span>{meta.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeSection === 'time' && (
+            <>
+              {/* Recurrence Mode */}
+              <div>
+                <FieldLabel>Modo de Recorrência</FieldLabel>
+                <div className="flex gap-3">
+                  {([['unica', '1x Única'], ['exata', '📅 Exata'], ['flexivel', '🔄 Flexível']] as [RecurrenceMode, string][]).map(([m, label]) => (
+                    <button
+                      key={m}
+                      onClick={() => set('recurrenceMode', m)}
+                      className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${
+                        form.recurrenceMode === m ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300' : 'bg-white/3 border-white/5 text-white/40 hover:text-white/70'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Exata */}
+              {form.recurrenceMode === 'exata' && (
+                <div className="space-y-4">
+                  <div>
+                    <FieldLabel>Horário Fixo</FieldLabel>
+                    <input
+                      type="time"
+                      value={form.recurrenceExactTime || ''}
+                      onChange={e => set('recurrenceExactTime', e.target.value)}
+                      className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Dias da Semana</FieldLabel>
+                    <div className="flex gap-2 flex-wrap">
+                      {WEEKDAYS.map((d, i) => {
+                        const key = String(i);
+                        const active = (form.recurrenceExactDays || []).includes(key);
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => {
+                              const current = form.recurrenceExactDays || [];
+                              set('recurrenceExactDays', active ? current.filter(x => x !== key) : [...current, key]);
+                            }}
+                            className={`w-10 h-10 rounded-xl text-[10px] font-black border transition-all ${
+                              active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-white/40'
+                            }`}
+                          >{d}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               )}
-            </div>
-          </FieldGroup>
 
-          <FieldGroup label="Propriedades Ganhas (Recompensas)" isDark={isDark}>
-            <div className="space-y-2">
-              {task.gainedProperties.map((g, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input type="text" value={g.name} onChange={e => updateGain(i, 'name', e.target.value)}
-                    placeholder="Atributo (ex: Força)"
-                    className={`flex-1 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all outline-none ${inp}`} />
-                  <span className={`text-xs ${isDark ? 'text-white/20' : 'text-slate-300'}`}>+</span>
-                  <input type="text" value={g.value} onChange={e => updateGain(i, 'value', e.target.value)}
-                    placeholder="Valor"
-                    className={`w-20 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all outline-none ${inp}`} />
-                  <button onClick={() => removeGain(i)} className="text-red-400 hover:text-red-300 opacity-60 hover:opacity-100">✕</button>
+              {/* Flexivel */}
+              {form.recurrenceMode === 'flexivel' && (
+                <div>
+                  <FieldLabel>A cada quantas horas?</FieldLabel>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.recurrenceFlexHours || 24}
+                      onChange={e => set('recurrenceFlexHours', Number(e.target.value))}
+                      className="w-28 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                    />
+                    <span className="text-white/40 text-sm">horas</span>
+                  </div>
+                  <p className="text-[10px] text-white/30 mt-2">Alerta dispara quando o tempo desde a última execução atingir esse limite.</p>
                 </div>
-              ))}
-              <button onClick={addGain}
-                className={`w-full py-2.5 rounded-xl border border-dashed text-xs font-bold transition-all ${isDark ? 'border-white/10 text-white/30 hover:border-emerald-500/50 hover:text-emerald-400' : 'border-slate-200 text-slate-400 hover:border-emerald-400 hover:text-emerald-600'}`}>
-                + Adicionar Ganho
-              </button>
-            </div>
-          </FieldGroup>
+              )}
 
-          <FieldGroup label="Notas e Observações" isDark={isDark}>
-            <textarea value={task.notes} onChange={e => set({ notes: e.target.value })}
-              rows={3} placeholder="Anotações rápidas sobre essa tarefa..."
-              className={`w-full px-4 py-3.5 rounded-2xl border text-sm font-medium resize-none transition-all outline-none ${inp}`} />
-          </FieldGroup>
+              {/* Estimated time */}
+              <div>
+                <FieldLabel>Duração Estimada (minutos)</FieldLabel>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.estimatedMinutes}
+                  onChange={e => set('estimatedMinutes', Number(e.target.value))}
+                  className="w-36 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                />
+              </div>
+            </>
+          )}
+
+          {activeSection === 'context' && (
+            <>
+              {/* Subtasks */}
+              <div>
+                <FieldLabel>Subtasks ({form.subtasks.length}/5)</FieldLabel>
+                <div className="space-y-2 mb-3">
+                  {form.subtasks.map(s => (
+                    <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-white/8 rounded-xl">
+                      <button onClick={() => toggleSubtask(s.id)} className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${s.done ? 'bg-green-500 border-green-400' : 'bg-white/10 border-white/20'}`}>
+                        {s.done && <span className="text-[10px] text-white">✓</span>}
+                      </button>
+                      <span className={`flex-1 text-sm ${s.done ? 'line-through opacity-30' : 'text-white/80'}`}>{s.title}</span>
+                      <button onClick={() => removeSubtask(s.id)} className="text-white/20 hover:text-red-400 transition-all text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+                {form.subtasks.length < 5 && (
+                  <div className="flex gap-2">
+                    <input
+                      value={subtaskInput}
+                      onChange={e => setSubtaskInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addSubtask()}
+                      placeholder="Adicionar subpasso..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                    />
+                    <button onClick={addSubtask} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-black transition-all">+</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Rewards */}
+              <div>
+                <FieldLabel>Propriedades Ganhas / Recompensas</FieldLabel>
+                <input
+                  value={form.rewards}
+                  onChange={e => set('rewards', e.target.value)}
+                  placeholder="Ex: Força +1, Alimento em estoque, Produtividade +2..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <FieldLabel>Notas e Observações</FieldLabel>
+                <textarea
+                  value={form.notes}
+                  onChange={e => set('notes', e.target.value)}
+                  rows={4}
+                  placeholder="Anotações livres sobre esta tarefa..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all resize-none"
+                />
+              </div>
+            </>
+          )}
+
+          {activeSection === 'metrics' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/5 border border-white/8 rounded-2xl p-4 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Vezes Concluída</p>
+                  <p className="text-3xl font-black text-white">{form.timesCompleted}</p>
+                </div>
+                <div className="bg-white/5 border border-white/8 rounded-2xl p-4 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Duração Estimada</p>
+                  <p className="text-3xl font-black text-white">{form.estimatedMinutes}<span className="text-sm text-white/30">min</span></p>
+                </div>
+              </div>
+
+              {/* Inertia */}
+              <div className="bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-orange-400 mb-2">⏱️ Cronômetro de Inércia</p>
+                <p className="text-2xl font-black text-orange-300">
+                  <InertiaClock lastCompletedAt={form.lastCompletedAt} />
+                </p>
+                <p className="text-[10px] text-orange-300/40 mt-1">Tempo desde a última execução</p>
+              </div>
+
+              {/* Last completed */}
+              <div>
+                <FieldLabel>Última Conclusão (manual)</FieldLabel>
+                <input
+                  type="datetime-local"
+                  value={form.lastCompletedAt ? new Date(form.lastCompletedAt).toISOString().slice(0, 16) : ''}
+                  onChange={e => set('lastCompletedAt', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
+                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 mt-8">
-          <button onClick={onClose}
-            className={`flex-1 py-4 rounded-2xl border font-black text-xs uppercase tracking-widest transition-all hover:scale-[1.02] ${isDark ? 'border-white/10 text-white/40 hover:border-white/30' : 'border-slate-200 text-slate-400 hover:border-slate-400'}`}>
+        <div className="px-8 py-6 border-t border-white/5 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3.5 rounded-2xl border border-white/10 text-white/40 hover:text-white hover:border-white/20 text-[10px] font-black uppercase tracking-widest transition-all">
             Cancelar
           </button>
-          <button onClick={onSave} disabled={!task.name.trim()}
-            className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-600/25 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none">
-            💾 Salvar + Agendar
+          <button
+            onClick={save}
+            disabled={!form.name.trim()}
+            className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/30 transition-all"
+          >
+            {initial ? 'Salvar Alterações' : 'Criar Tarefa'} ✨
           </button>
         </div>
       </div>
@@ -341,578 +485,314 @@ const TaskForm: React.FC<TaskFormProps> = ({ task, onChange, onSave, onClose, is
   );
 };
 
-// ─── STATS BAR ────────────────────────────────────────────────────────────────
+// ─── Task Card ────────────────────────────────────────────────────────────────
 
-const StatsBar: React.FC<{ tasks: Task[]; isDark: boolean }> = ({ tasks, isDark }) => {
-  const card = isDark ? 'bg-white/[0.03] border-white/5' : 'bg-white border-slate-100 shadow-sm';
-  const stats = [
-    { label: 'Total',      value: tasks.length,                                            emoji: '📋', color: 'text-blue-400' },
-    { label: 'Em Aberto',  value: tasks.filter(t => t.status === 'em_aberto').length,      emoji: '🔵', color: 'text-sky-400' },
-    { label: 'Pendentes',  value: tasks.filter(t => t.status === 'pendente').length,       emoji: '⏳', color: 'text-amber-400' },
-    { label: 'Concluídas', value: tasks.filter(t => t.status === 'concluido').length,      emoji: '✅', color: 'text-emerald-400' },
-    { label: 'Na Agenda',  value: tasks.filter(t => !!t.reminderId).length,                emoji: '📅', color: 'text-indigo-400' },
-  ];
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-      {stats.map(s => (
-        <div key={s.label} className={`rounded-2xl border p-4 flex flex-col gap-1 ${card}`}>
-          <span className="text-xl">{s.emoji}</span>
-          <span className={`text-2xl font-black ${s.color}`}>{s.value}</span>
-          <span className={`text-[9px] font-black uppercase tracking-widest ${isDark ? 'text-white/30' : 'text-slate-400'}`}>{s.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ─── TASK ROW ─────────────────────────────────────────────────────────────────
-
-interface TaskRowProps {
+interface TaskCardProps {
   task: Task;
-  index: number;
-  onEdit: () => void;
-  onDelete: () => void;
-  onStatusChange: (s: TaskStatus) => void;
-  isDark: boolean;
+  onEdit: (t: Task) => void;
+  onDelete: (id: string) => void;
+  onComplete: (id: string) => void;
 }
 
-const TaskRow: React.FC<TaskRowProps> = ({ task, index, onEdit, onDelete, onStatusChange, isDark }) => {
-  const s = STATUS_META[task.status];
-  const p = PRIORITY_META[task.priority];
-  const t = TYPE_META[task.type];
-  const subtasksDone = task.subtasks.filter(sub => sub.done).length;
-  const td = isDark ? 'border-white/5 text-white/80' : 'border-slate-100 text-slate-700';
-  const bdr = isDark ? 'border-white/5' : 'border-slate-100';
+const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit, onDelete, onComplete }) => {
+  const [expanded, setExpanded] = useState(false);
+  const status = STATUS_META[task.status];
+  const type = TYPE_META[task.taskType];
+  const cls = CLASS_META[task.taskClass];
 
   return (
-    <tr className={`group border-b ${isDark ? 'border-white/5 hover:bg-white/[0.025]' : 'border-slate-50 hover:bg-slate-50/80'} transition-colors`}>
-      <td className={`px-3 py-3 text-center text-[10px] font-black border-r ${bdr} ${isDark ? 'text-white/20' : 'text-slate-300'}`}>{index + 1}</td>
-      <td className={`px-4 py-3 border-r ${td} min-w-[130px]`}>
-        <div className="flex flex-col gap-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold truncate max-w-[150px]">{task.name || <em className="opacity-30">Sem nome</em>}</span>
-            {task.reminderId && <span title="Vinculada ao Calendário" className="text-[10px] flex-shrink-0">📅</span>}
-          </div>
-          {task.location && <span className={`text-[9px] font-semibold ${isDark ? 'text-white/30' : 'text-slate-400'}`}>📍 {task.location}</span>}
-        </div>
-      </td>
-      <td className={`px-4 py-3 border-r ${td}`}>
-        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${isDark ? 'bg-white/5' : 'bg-slate-100'}`}>{task.category || '--'}</span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <span className="text-[10px] font-bold whitespace-nowrap">{t.emoji} {t.label}</span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${p.bg} ${p.color}`}>{p.label}</span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <div className="flex flex-col gap-0.5 min-w-[100px]">
-          <span className={`text-[9px] font-black ${task.recurrenceMode === 'exata' ? 'text-blue-400' : 'text-purple-400'}`}>
-            {task.recurrenceMode === 'exata' ? '📅 Exata' : '🔄 Flexível'}
-          </span>
-          <span className={`text-[9px] truncate max-w-[120px] ${isDark ? 'text-white/35' : 'text-slate-400'}`}>{task.recurrenceValue || '--'}</span>
-        </div>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <span className={`text-[10px] font-semibold whitespace-nowrap ${isDark ? 'text-white/50' : 'text-slate-500'}`}>
-          {task.nextExecution
-            ? new Date(task.nextExecution).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-            : '--'}
-        </span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <select value={task.status} onChange={e => onStatusChange(e.target.value as TaskStatus)}
-          className={`text-[9px] font-black px-2 py-1.5 rounded-xl border cursor-pointer outline-none transition-all ${s.bg} ${s.color}`}
-          style={{ minWidth: '88px', background: 'transparent' }}>
-          {(Object.keys(STATUS_META) as TaskStatus[]).map(st => (
-            <option key={st} value={st} className="bg-slate-900 text-white">{STATUS_META[st].emoji} {STATUS_META[st].label}</option>
-          ))}
-        </select>
-      </td>
-      <td className={`px-3 py-3 border-r ${td} text-center`}>
-        <span className={`text-[10px] font-semibold ${isDark ? 'text-white/50' : 'text-slate-500'}`}>{formatDuration(task.estimatedDuration)}</span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td} text-center`}>
-        <span className={`text-[11px] font-black ${task.timesCompleted > 0 ? 'text-emerald-400' : isDark ? 'text-white/20' : 'text-slate-300'}`}>{task.timesCompleted}</span>
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        {task.subtasks.length > 0 ? (
-          <div className="flex flex-col gap-0.5">
-            <span className={`text-[10px] font-black ${subtasksDone === task.subtasks.length ? 'text-emerald-400' : isDark ? 'text-white/60' : 'text-slate-600'}`}>
-              {subtasksDone}/{task.subtasks.length}
+    <div className={`bg-[#12131a] border rounded-2xl overflow-hidden transition-all duration-300 hover:border-indigo-500/30 ${task.status === 'concluido' ? 'border-white/5 opacity-60' : 'border-white/8'}`}>
+      {/* Main row */}
+      <div className="px-5 py-4 flex items-start gap-4">
+        {/* Checkbox */}
+        <button
+          onClick={() => onComplete(task.id)}
+          className={`mt-0.5 w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+            task.status === 'concluido' ? 'bg-green-500 border-green-400' : 'bg-white/5 border-white/20 hover:border-indigo-400'
+          }`}
+        >
+          {task.status === 'concluido' && <span className="text-[10px] text-white font-black">✓</span>}
+        </button>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2 flex-wrap mb-2">
+            <span className={`text-sm font-bold ${task.status === 'concluido' ? 'line-through text-white/30' : 'text-white'}`}>
+              {task.name}
             </span>
-            <div className={`w-12 h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-white/10' : 'bg-slate-100'}`}>
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(subtasksDone / task.subtasks.length) * 100}%` }} />
-            </div>
+            <Badge className={cls.bg + ' ' + cls.color}>{task.taskClass}</Badge>
+            <Badge className={status.bg + ' ' + status.color}>{status.icon} {status.label}</Badge>
           </div>
-        ) : <span className={`text-[9px] ${isDark ? 'text-white/15' : 'text-slate-200'}`}>--</span>}
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        {task.gainedProperties.length > 0 ? (
-          <div className="flex flex-col gap-0.5">
-            {task.gainedProperties.slice(0, 2).map((g, i) => (
-              <span key={i} className="text-[9px] text-emerald-400 font-bold whitespace-nowrap">+{g.name} {g.value}</span>
-            ))}
-          </div>
-        ) : <span className={`text-[9px] ${isDark ? 'text-white/15' : 'text-slate-200'}`}>--</span>}
-      </td>
-      <td className={`px-3 py-3 border-r ${td}`}>
-        <span className={`text-[9px] font-bold whitespace-nowrap ${isDark ? 'text-amber-400/70' : 'text-amber-600'}`}>
-          {formatInertia(task.lastCompletedAt, task.createdAt)} sem fazer
-        </span>
-      </td>
-      <td className={`px-3 py-3 ${td}`}>
-        <span className={`text-[9px] truncate max-w-[90px] block ${isDark ? 'text-white/30' : 'text-slate-400'}`}>{task.notes || '--'}</span>
-      </td>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="w-7 h-7 rounded-xl bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 flex items-center justify-center text-xs transition-all">✏️</button>
-          <button onClick={onDelete} className="w-7 h-7 rounded-xl bg-red-500/20 hover:bg-red-500/40 text-red-400 flex items-center justify-center text-xs transition-all">🗑️</button>
-        </div>
-      </td>
-    </tr>
-  );
-};
-
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
-
-interface TasksTabProps {
-  isDark: boolean;
-  user: any;
-  profile: PartnerProfile;
-}
-
-export const TasksTab: React.FC<TasksTabProps> = ({ isDark, user, profile }) => {
-  const [tasks, setTasks] = useState<Task[]>(loadTasks);
-  const [showForm, setShowForm] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all');
-  const [filterType, setFilterType] = useState<TaskType | 'all'>('all');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeView, setActiveView] = useState<'table' | 'stats'>('table');
-  const [isSaving, setIsSaving] = useState(false);
-  const [ticker, setTicker] = useState(0);
-  const [toast, setToast] = useState<string | null>(null);
-
-  // Inertia ticker every minute
-  useEffect(() => {
-    const iv = setInterval(() => setTicker(t => t + 1), 60000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Persist tasks
-  useEffect(() => { saveTasks(tasks); }, [tasks]);
-
-  // Toast helper
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  // ── Calendar Integration: sync reminder from Supabase ──────────────────────
-
-  /** Creates or updates a Supabase reminder linked to this task */
-  const upsertReminder = useCallback(async (task: Task): Promise<string | null> => {
-    if (!user || !task.nextExecution) return null;
-
-    const reminderTitle = `📋 ${task.name}${task.category ? ` [${task.category}]` : ''}`;
-    const triggerAt = new Date(task.nextExecution).toISOString();
-
-    if (task.reminderId) {
-      // Update existing
-      await supabase.from('reminders').update({
-        title: reminderTitle,
-        trigger_at: triggerAt,
-      }).eq('id', task.reminderId);
-      return task.reminderId;
-    } else {
-      // Insert new
-      const { data, error } = await supabase.from('reminders').insert({
-        owner_id: user.id,
-        title: reminderTitle,
-        trigger_at: triggerAt,
-        is_completed: false,
-      }).select('id').single();
-      if (error) { console.error('Reminder insert error:', error); return null; }
-      return data?.id ?? null;
-    }
-  }, [user]);
-
-  /** Deletes the linked Supabase reminder */
-  const deleteLinkedReminder = useCallback(async (reminderId: string) => {
-    if (!user || !reminderId) return;
-    await supabase.from('reminders').delete().eq('id', reminderId);
-  }, [user]);
-
-  // ── AI Integration: when task's reminder is fired, AI speaks ──────────────
-  // The CallScreen listens for 'reminder-triggered' window events.
-  // When a linked reminder fires (from App.tsx scheduler), CallScreen already handles it.
-  // Here we also listen so we can mark the task as triggered in real-time.
-  useEffect(() => {
-    const handler = (e: any) => {
-      const title = e.detail?.title as string | undefined;
-      if (!title) return;
-      // Try to match tasks whose linked reminder title contains the task name
-      setTasks(prev => prev.map(t => {
-        if (t.reminderId && title.includes(t.name)) {
-          return {
-            ...t,
-            status: t.status === 'em_aberto' ? 'pendente' : t.status,
-          };
-        }
-        return t;
-      }));
-    };
-    window.addEventListener('reminder-triggered', handler);
-    return () => window.removeEventListener('reminder-triggered', handler);
-  }, []);
-
-  // ── CRUD ──────────────────────────────────────────────────────────────────
-
-  const openNew = () => { setEditingTask(emptyTask()); setShowForm(true); };
-  const openEdit = (task: Task) => { setEditingTask({ ...task }); setShowForm(true); };
-
-  const saveTask = async () => {
-    if (!editingTask) return;
-    setIsSaving(true);
-
-    let reminderId = editingTask.reminderId;
-
-    // Sync to Supabase calendar if nextExecution is set
-    if (editingTask.nextExecution && user) {
-      reminderId = await upsertReminder(editingTask);
-      showToast(`📅 Lembrete "${editingTask.name}" adicionado à Agenda!`);
-    } else if (!editingTask.nextExecution && editingTask.reminderId) {
-      // User cleared the date: remove reminder
-      await deleteLinkedReminder(editingTask.reminderId);
-      reminderId = null;
-      showToast('📅 Lembrete removido da Agenda.');
-    }
-
-    const finalTask = { ...editingTask, reminderId };
-
-    setTasks(prev => {
-      const exists = prev.find(t => t.id === finalTask.id);
-      return exists ? prev.map(t => t.id === finalTask.id ? finalTask : t) : [...prev, finalTask];
-    });
-
-    setIsSaving(false);
-    setShowForm(false);
-    setEditingTask(null);
-  };
-
-  const deleteTask = async (id: string) => {
-    if (!confirm('Excluir esta tarefa?')) return;
-    const task = tasks.find(t => t.id === id);
-    if (task?.reminderId) await deleteLinkedReminder(task.reminderId);
-    setTasks(prev => prev.filter(t => t.id !== id));
-    showToast('🗑️ Tarefa excluída.');
-  };
-
-  const changeStatus = (id: string, status: TaskStatus) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id !== id) return t;
-      const updates: Partial<Task> = { status };
-      if (status === 'concluido' || status === 'concluido_fora') {
-        updates.timesCompleted = t.timesCompleted + 1;
-        updates.lastCompletedAt = new Date().toISOString();
-        if (status === 'concluido') showToast(`✅ "${t.name}" concluída! +${t.gainedProperties.map(g => g.name).join(', ')}`);
-      }
-      return { ...t, ...updates };
-    }));
-  };
-
-  // ── SUBTASK TOGGLE in table ────────────────────────────────────────────────
-  const toggleSubtask = (taskId: string, subtaskId: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id !== taskId) return t;
-      return { ...t, subtasks: t.subtasks.map(s => s.id === subtaskId ? { ...s, done: !s.done } : s) };
-    }));
-  };
-
-  // ── FILTERS ───────────────────────────────────────────────────────────────
-
-  const categories = Array.from(new Set(tasks.map(t => t.category).filter(Boolean)));
-
-  const filtered = tasks.filter(t => {
-    if (filterStatus !== 'all' && t.status !== filterStatus) return false;
-    if (filterType !== 'all' && t.type !== filterType) return false;
-    if (filterCategory && t.category !== filterCategory) return false;
-    if (searchQuery && !t.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
-
-  // ── STYLES ────────────────────────────────────────────────────────────────
-
-  const bg   = isDark ? 'bg-[#0b0c10] text-white' : 'bg-[#f9f9fb] text-slate-900';
-  const card = isDark ? 'bg-[#0e1117] border-white/5' : 'bg-white border-slate-100 shadow-sm';
-  const inp  = isDark
-    ? 'bg-[#1a1d26] border-white/10 text-white placeholder-white/20 focus:border-blue-500/50'
-    : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:border-blue-400';
-  const th   = isDark ? 'bg-[#0e1117] text-white/30 border-white/5' : 'bg-slate-50 text-slate-400 border-slate-100';
-
-  return (
-    <div className={`min-h-screen p-4 md:p-8 ${bg}`}>
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-[300] animate-in slide-in-from-right-4 fade-in duration-300">
-          <div className={`px-5 py-3 rounded-2xl shadow-2xl border text-sm font-bold ${isDark ? 'bg-[#0e1117] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
-            {toast}
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className={`text-3xl md:text-4xl font-black tracking-tighter uppercase italic ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            📋 Planilha de <span className="text-blue-500">Tarefas</span>
-          </h1>
-          <div className="flex items-center gap-3 mt-1.5">
-            <p className={`text-[10px] font-black uppercase tracking-[0.25em] ${isDark ? 'text-white/30' : 'text-slate-400'}`}>
-              {tasks.length} tarefa{tasks.length !== 1 ? 's' : ''}
-            </p>
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${isDark ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600'}`}>
-              📅 Integrado à Agenda · 🤖 IA Avisará
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className={`flex rounded-2xl border overflow-hidden ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
-            {(['table', 'stats'] as const).map(v => (
-              <button key={v} onClick={() => setActiveView(v)}
-                className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${activeView === v ? 'bg-blue-600 text-white' : isDark ? 'text-white/30 hover:text-white/60' : 'text-slate-400 hover:text-slate-600'}`}>
-                {v === 'table' ? '📊 Tabela' : '📈 Stats'}
-              </button>
-            ))}
-          </div>
-          <button onClick={openNew}
-            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-600/25 hover:scale-[1.03] active:scale-95 transition-all">
-            ✨ Nova Tarefa
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Bar */}
-      <StatsBar tasks={tasks} isDark={isDark} />
-
-      {/* Filters */}
-      <div className={`rounded-2xl border p-4 mb-4 flex flex-wrap gap-3 items-center ${card}`}>
-        <div className="flex items-center gap-2 flex-1 min-w-[160px]">
-          <span className={isDark ? 'text-white/30' : 'text-slate-300'}>🔍</span>
-          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Buscar tarefa..."
-            className={`flex-1 bg-transparent outline-none text-sm font-semibold ${isDark ? 'text-white placeholder-white/20' : 'text-slate-900 placeholder-slate-300'}`} />
-        </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}
-          className={`px-3 py-2 rounded-xl border text-[10px] font-black outline-none ${inp}`}>
-          <option value="all">Todos os Status</option>
-          {(Object.keys(STATUS_META) as TaskStatus[]).map(s => (
-            <option key={s} value={s}>{STATUS_META[s].emoji} {STATUS_META[s].label}</option>
-          ))}
-        </select>
-        <select value={filterType} onChange={e => setFilterType(e.target.value as any)}
-          className={`px-3 py-2 rounded-xl border text-[10px] font-black outline-none ${inp}`}>
-          <option value="all">Todos os Tipos</option>
-          {(Object.keys(TYPE_META) as TaskType[]).map(t => (
-            <option key={t} value={t}>{TYPE_META[t].emoji} {TYPE_META[t].label}</option>
-          ))}
-        </select>
-        {categories.length > 0 && (
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-            className={`px-3 py-2 rounded-xl border text-[10px] font-black outline-none ${inp}`}>
-            <option value="">Todas Categorias</option>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
-        {(filterStatus !== 'all' || filterType !== 'all' || filterCategory || searchQuery) && (
-          <button onClick={() => { setFilterStatus('all'); setFilterType('all'); setFilterCategory(''); setSearchQuery(''); }}
-            className={`px-3 py-2 rounded-xl text-[10px] font-black transition-all ${isDark ? 'bg-white/5 text-white/40 hover:text-white/70' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`}>
-            ✕ Limpar
-          </button>
-        )}
-      </div>
-
-      {/* Table or Stats */}
-      {activeView === 'table' ? (
-        filtered.length === 0 ? (
-          <div className={`rounded-3xl border p-16 flex flex-col items-center gap-4 ${card}`}>
-            <span className="text-5xl">📋</span>
-            <p className={`text-lg font-black uppercase tracking-widest ${isDark ? 'text-white/20' : 'text-slate-300'}`}>
-              {tasks.length === 0 ? 'Nenhuma tarefa ainda' : 'Nenhuma tarefa encontrada'}
-            </p>
-            {tasks.length === 0 && (
-              <button onClick={openNew} className="mt-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all">
-                ✨ Criar Primeira Tarefa
-              </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={`text-[10px] font-bold ${type.color}`}>{type.icon} {type.label}</span>
+            {task.category && <span className="text-[10px] text-white/30 font-medium"># {task.category}</span>}
+            {task.locality && <span className="text-[10px] text-white/30 font-medium">📍 {task.locality}</span>}
+            {task.recurrenceMode !== 'unica' && (
+              <span className="text-[10px] text-indigo-400/70 font-bold">
+                {task.recurrenceMode === 'exata' ? `📅 ${task.recurrenceExactTime || ''}` : `🔄 ${task.recurrenceFlexHours}h`}
+              </span>
             )}
           </div>
-        ) : (
-          <div className={`rounded-3xl border overflow-hidden ${card}`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse" style={{ minWidth: '1080px' }}>
-                <thead>
-                  <tr className={`border-b ${isDark ? 'border-white/5' : 'border-slate-100'}`}>
-                    {['ID', 'NOME DA TAREFA', 'CATEGORIA', 'TIPO', 'CLASSE', 'RECORRÊNCIA', 'PRÓX. EXEC.', 'STATUS', 'DUR. EST.', 'QUANT. FEITA', 'SUBTAREFAS', 'PROP. GANHAS', 'INÉRCIA ATUAL', 'NOTAS', ''].map(h => (
-                      <th key={h} className={`px-3 py-3.5 text-[8px] font-black uppercase tracking-[0.15em] border-b border-r last:border-r-0 whitespace-nowrap ${th}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((task, i) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      index={i}
-                      onEdit={() => openEdit(task)}
-                      onDelete={() => deleteTask(task.id)}
-                      onStatusChange={s => changeStatus(task.id, s)}
-                      isDark={isDark}
-                    />
-                  ))}
-                </tbody>
-              </table>
+
+          {/* Subtask progress */}
+          {task.subtasks.length > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-500 rounded-full transition-all"
+                  style={{ width: `${(task.subtasks.filter(s => s.done).length / task.subtasks.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-[9px] text-white/30 font-bold">
+                {task.subtasks.filter(s => s.done).length}/{task.subtasks.length}
+              </span>
             </div>
-          </div>
-        )
-      ) : (
-        /* ── Stats View ── */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* By Category */}
-          <div className={`rounded-3xl border p-6 ${card}`}>
-            <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>Por Categoria</h3>
-            {categories.length === 0
-              ? <p className={`text-xs ${isDark ? 'text-white/20' : 'text-slate-300'}`}>Nenhuma categoria cadastrada</p>
-              : categories.map(cat => {
-                const catTasks = tasks.filter(t => t.category === cat);
-                const catDone  = catTasks.filter(t => t.status === 'concluido').length;
-                return (
-                  <div key={cat} className="flex items-center gap-3 mb-3">
-                    <span className={`text-xs font-bold w-28 truncate ${isDark ? 'text-white/70' : 'text-slate-600'}`}>{cat}</span>
-                    <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/5' : 'bg-slate-100'}`}>
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(catDone / catTasks.length) * 100}%` }} />
-                    </div>
-                    <span className={`text-[10px] font-black w-12 text-right ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{catDone}/{catTasks.length}</span>
-                  </div>
-                );
-              })}
-          </div>
-
-          {/* By Type */}
-          <div className={`rounded-3xl border p-6 ${card}`}>
-            <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>Por Tipo</h3>
-            {(Object.keys(TYPE_META) as TaskType[]).map(type => {
-              const count = tasks.filter(t => t.type === type).length;
-              const done  = tasks.filter(t => t.type === type && t.status === 'concluido').length;
-              return (
-                <div key={type} className="flex items-center gap-3 mb-3">
-                  <span className="text-sm w-6">{TYPE_META[type].emoji}</span>
-                  <span className={`text-xs font-bold w-24 ${isDark ? 'text-white/70' : 'text-slate-600'}`}>{TYPE_META[type].label}</span>
-                  <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/5' : 'bg-slate-100'}`}>
-                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: count > 0 ? `${(done / count) * 100}%` : '0%' }} />
-                  </div>
-                  <span className={`text-[10px] font-black w-6 text-right ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{count}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* By Priority */}
-          <div className={`rounded-3xl border p-6 ${card}`}>
-            <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>Por Prioridade</h3>
-            {(['A', 'B', 'C', 'D'] as TaskPriority[]).map(prio => {
-              const count = tasks.filter(t => t.priority === prio).length;
-              const pm = PRIORITY_META[prio];
-              return (
-                <div key={prio} className="flex items-center gap-3 mb-3">
-                  <span className={`text-[10px] font-black w-16 ${pm.color}`}>{pm.label}</span>
-                  <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/5' : 'bg-slate-100'}`}>
-                    <div className={`h-full rounded-full ${prio === 'A' ? 'bg-red-500' : prio === 'B' ? 'bg-orange-500' : prio === 'C' ? 'bg-yellow-500' : 'bg-slate-500'}`}
-                      style={{ width: tasks.length > 0 ? `${(count / tasks.length) * 100}%` : '0%' }} />
-                  </div>
-                  <span className={`text-[10px] font-black w-6 text-right ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{count}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Top Inertia */}
-          <div className={`rounded-3xl border p-6 ${card}`}>
-            <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>⚠️ Maior Inércia (Negligenciadas)</h3>
-            {tasks.length === 0
-              ? <p className={`text-xs ${isDark ? 'text-white/20' : 'text-slate-300'}`}>Nenhuma tarefa</p>
-              : tasks.slice().sort((a, b) => {
-                const aBase = new Date(a.lastCompletedAt ?? a.createdAt).getTime();
-                const bBase = new Date(b.lastCompletedAt ?? b.createdAt).getTime();
-                return aBase - bBase;
-              }).slice(0, 5).map(t => (
-                <div key={t.id} className="flex items-center justify-between mb-2.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${PRIORITY_META[t.priority].bg} ${PRIORITY_META[t.priority].color}`}>{t.priority}</span>
-                    <span className={`text-xs font-bold truncate max-w-[130px] ${isDark ? 'text-white/70' : 'text-slate-600'}`}>{t.name}</span>
-                  </div>
-                  <span className="text-[9px] font-black text-amber-400 flex-shrink-0">
-                    {formatInertia(t.lastCompletedAt, t.createdAt)} sem fazer
-                  </span>
-                </div>
-              ))}
-          </div>
-
-          {/* Calendar Sync Summary */}
-          <div className={`rounded-3xl border p-6 md:col-span-2 ${card}`}>
-            <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>📅 Agenda & IA – Próximas Tarefas Agendadas</h3>
-            {tasks.filter(t => t.nextExecution && t.reminderId).length === 0
-              ? (
-                <p className={`text-xs ${isDark ? 'text-white/20' : 'text-slate-300'}`}>
-                  Nenhuma tarefa vinculada à Agenda ainda. Defina uma <strong>Próxima Execução</strong> ao criar uma tarefa.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {tasks.filter(t => t.nextExecution && t.reminderId)
-                    .sort((a, b) => new Date(a.nextExecution).getTime() - new Date(b.nextExecution).getTime())
-                    .slice(0, 6)
-                    .map(t => (
-                      <div key={t.id} className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'border-white/5 bg-white/[0.02]' : 'border-slate-100 bg-slate-50'}`}>
-                        <span className="text-xl">{TYPE_META[t.type].emoji}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-bold truncate ${isDark ? 'text-white/80' : 'text-slate-700'}`}>{t.name}</p>
-                          <p className={`text-[9px] ${isDark ? 'text-white/30' : 'text-slate-400'}`}>
-                            🕐 {new Date(t.nextExecution).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                        <span className="text-[9px] font-black text-emerald-400">📅 IA vai avisar</span>
-                      </div>
-                    ))}
-                </div>
-              )}
-          </div>
+          )}
         </div>
-      )}
 
-      {/* Task Form */}
-      {showForm && editingTask && (
-        <TaskForm
-          task={editingTask}
-          onChange={setEditingTask}
-          onSave={saveTask}
-          onClose={() => { setShowForm(false); setEditingTask(null); }}
-          isDark={isDark}
-          hasLinkedReminder={!!editingTask.reminderId}
-        />
-      )}
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button onClick={() => setExpanded(e => !e)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-all text-xs">
+            {expanded ? '▲' : '▼'}
+          </button>
+          <button onClick={() => onEdit(task)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-indigo-400 hover:bg-white/10 transition-all text-xs">✏️</button>
+          <button onClick={() => onDelete(task.id)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs">🗑️</button>
+        </div>
+      </div>
 
-      {/* Loading overlay */}
-      {isSaving && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className={`px-8 py-6 rounded-3xl border ${isDark ? 'bg-[#0e1117] border-white/10' : 'bg-white border-slate-200'} shadow-2xl flex items-center gap-4`}>
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className={`text-sm font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Salvando e sincronizando agenda...</span>
+      {/* Expanded details */}
+      {expanded && (
+        <div className="px-5 pb-5 pt-1 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Inércia</p>
+            <p className="text-sm font-bold text-orange-400"><InertiaClock lastCompletedAt={task.lastCompletedAt} /></p>
           </div>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Concluída</p>
+            <p className="text-sm font-bold text-white">{task.timesCompleted}×</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Duração Estimada</p>
+            <p className="text-sm font-bold text-white">{task.estimatedMinutes} min</p>
+          </div>
+          {task.rewards && (
+            <div className="col-span-2 md:col-span-1">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Recompensas</p>
+              <p className="text-[11px] text-yellow-400 font-bold">🏆 {task.rewards}</p>
+            </div>
+          )}
+          {task.notes && (
+            <div className="col-span-2 md:col-span-4">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Notas</p>
+              <p className="text-[11px] text-white/50 leading-relaxed">{task.notes}</p>
+            </div>
+          )}
+          {task.subtasks.length > 0 && (
+            <div className="col-span-2 md:col-span-4">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-2">Subtasks</p>
+              <div className="space-y-1.5">
+                {task.subtasks.map(s => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <span className={`text-[10px] ${s.done ? 'text-green-400' : 'text-white/30'}`}>{s.done ? '✅' : '⬜'}</span>
+                    <span className={`text-[11px] ${s.done ? 'line-through text-white/30' : 'text-white/60'}`}>{s.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-export default TasksTab;
+// ─── Main TasksTab ─────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'tasks_v1';
+
+const loadTasks = (): Task[] => {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch { return []; }
+};
+
+const saveTasks = (tasks: Task[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+};
+
+type FilterStatus = 'all' | TaskStatus;
+type SortMode = 'created' | 'class' | 'status' | 'category';
+
+export const TasksTab: React.FC = () => {
+  const [tasks, setTasks] = useState<Task[]>(loadTasks);
+  const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterType, setFilterType] = useState<TaskType | 'all'>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('created');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => { saveTasks(tasks); }, [tasks]);
+
+  const upsert = (task: Task) => {
+    setTasks(prev => {
+      const idx = prev.findIndex(t => t.id === task.id);
+      if (idx >= 0) { const next = [...prev]; next[idx] = task; return next; }
+      return [task, ...prev];
+    });
+  };
+
+  const deleteTask = (id: string) => setTasks(prev => prev.filter(t => t.id !== id));
+
+  const completeTask = (id: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      const now = new Date().toISOString();
+      if (t.status === 'concluido') return { ...t, status: 'em_aberto' as TaskStatus };
+      return { ...t, status: 'concluido' as TaskStatus, timesCompleted: t.timesCompleted + 1, lastCompletedAt: now };
+    }));
+  };
+
+  const categories = [...new Set(tasks.map(t => t.category).filter(Boolean))];
+
+  const filtered = tasks
+    .filter(t => filterStatus === 'all' || t.status === filterStatus)
+    .filter(t => !filterCategory || t.category === filterCategory)
+    .filter(t => filterType === 'all' || t.taskType === filterType)
+    .filter(t => !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortMode === 'class') return ['A', 'B', 'C'].indexOf(a.taskClass) - ['A', 'B', 'C'].indexOf(b.taskClass);
+      if (sortMode === 'status') return a.status.localeCompare(b.status);
+      if (sortMode === 'category') return (a.category || '').localeCompare(b.category || '');
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  // Summary stats
+  const total = tasks.length;
+  const done = tasks.filter(t => t.status === 'concluido').length;
+  const open = tasks.filter(t => t.status === 'em_aberto').length;
+  const failed = tasks.filter(t => t.status === 'falhou' || t.status === 'nao_concluido').length;
+
+  return (
+    <div className="flex flex-col h-full bg-[#0b0c10] text-white">
+      {/* Top bar */}
+      <div className="px-6 pt-6 pb-4 border-b border-white/5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-black tracking-tighter">📋 Tarefas</h1>
+            <p className="text-[9px] font-black uppercase tracking-widest opacity-30">Gestão de Produtividade</p>
+          </div>
+          <button
+            onClick={() => { setEditingTask(undefined); setShowForm(true); }}
+            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 active:scale-95"
+          >
+            + Nova Tarefa
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-3 mb-5">
+          {[
+            { label: 'Total', val: total, color: 'text-white' },
+            { label: 'Em Aberto', val: open, color: 'text-blue-400' },
+            { label: 'Concluídas', val: done, color: 'text-green-400' },
+            { label: 'Falhas', val: failed, color: 'text-red-400' },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/8 rounded-xl p-3 text-center">
+              <p className={`text-xl font-black ${s.color}`}>{s.val}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Search + Filters */}
+        <div className="space-y-3">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Buscar tarefa..."
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+          />
+          <div className="flex gap-2 flex-wrap">
+            {/* Status filter */}
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value as FilterStatus)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
+            >
+              <option value="all">Todos Status</option>
+              {(Object.entries(STATUS_META) as [TaskStatus, any][]).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+
+            {/* Category filter */}
+            {categories.length > 0 && (
+              <select
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
+              >
+                <option value="">Todas Categorias</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+
+            {/* Type filter */}
+            <select
+              value={filterType}
+              onChange={e => setFilterType(e.target.value as TaskType | 'all')}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
+            >
+              <option value="all">Todos Tipos</option>
+              {(Object.entries(TYPE_META) as [TaskType, any][]).map(([k, v]) => (
+                <option key={k} value={k}>{v.icon} {v.label}</option>
+              ))}
+            </select>
+
+            {/* Sort */}
+            <select
+              value={sortMode}
+              onChange={e => setSortMode(e.target.value as SortMode)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all ml-auto"
+            >
+              <option value="created">↕ Mais Recente</option>
+              <option value="class">↕ Classe A→C</option>
+              <option value="status">↕ Status</option>
+              <option value="category">↕ Categoria</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        {filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-64 opacity-20">
+            <span className="text-6xl mb-4">📋</span>
+            <p className="text-sm font-black uppercase tracking-widest">Nenhuma tarefa encontrada</p>
+            <p className="text-[10px] mt-1">Clique em "+ Nova Tarefa" para começar</p>
+          </div>
+        )}
+        {filtered.map(task => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            onEdit={t => { setEditingTask(t); setShowForm(true); }}
+            onDelete={deleteTask}
+            onComplete={completeTask}
+          />
+        ))}
+      </div>
+
+      {/* Form Modal */}
+      {showForm && (
+        <TaskFormModal
+          initial={editingTask}
+          onSave={upsert}
+          onClose={() => { setShowForm(false); setEditingTask(undefined); }}
+        />
+      )}
+    </div>
+  );
+};
