@@ -138,6 +138,7 @@ const InertiaClock: React.FC<{ lastCompletedAt?: string }> = ({ lastCompletedAt 
 
 const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [timelineDay, setTimelineDay] = useState<number | null>(null);
 
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -150,6 +151,60 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
   const daysArray = [];
   for (let i = 0; i < firstDay; i++) daysArray.push(null);
   for (let d = 1; d <= daysInMonth; d++) daysArray.push(d);
+
+  // Se o usuário deu duplo clique em um dia, mostra a linha do tempo de 24h (00:00 - 23:00)
+  if (timelineDay !== null) {
+    const selectedDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(timelineDay).padStart(2, '0')}`;
+    const dayTasks = scheduledTasks.filter(t => {
+      if (t.startTime && t.startTime.startsWith(selectedDateStr)) return true;
+      if (t.scheduledAt && t.scheduledAt.startsWith(selectedDateStr)) return true;
+      return false;
+    });
+
+    const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00');
+
+    return (
+      <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
+        <div className="flex justify-between items-center border-b border-white/10 pb-2">
+          <span className="text-xs font-black text-blue-300 uppercase">
+            📅 Timeline ({timelineDay} {monthNames[month].slice(0,3)})
+          </span>
+          <button
+            onClick={() => setTimelineDay(null)}
+            className="px-2.5 py-1 rounded bg-blue-600/30 border border-blue-500/40 text-[9px] font-black text-blue-200 uppercase hover:bg-blue-600/50"
+          >
+            ← Voltar
+          </button>
+        </div>
+
+        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-[10px]">
+          {hours.map(h => {
+            const tasksAtHour = dayTasks.filter(t => {
+              const taskHour = (t.startTime || t.scheduledAt || '').slice(11, 13) + ':00';
+              return taskHour === h;
+            });
+
+            return (
+              <div key={h} className="flex items-start gap-2 border-b border-white/5 py-1">
+                <span className="w-12 text-white/40 font-bold">{h}</span>
+                <div className="flex-1 min-h-[20px]">
+                  {tasksAtHour.length > 0 ? (
+                    tasksAtHour.map(t => (
+                      <div key={t.id} className="bg-blue-600/20 border border-blue-500/40 px-2 py-0.5 rounded text-blue-200 font-sans font-bold text-[10px] mb-1">
+                        {t.name} ({t.estimatedMinutes}m)
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-white/10 text-[9px]">-- livre --</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-black/30 border border-white/10 rounded-2xl p-4 space-y-3">
@@ -181,15 +236,30 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
           
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           
-          // Verificar se há tarefas agendadas neste dia (Azul = Fixo, Vermelho = Flexível)
-          const fixedTasks = scheduledTasks.filter(t => t.recurrenceMode === 'exata' || (t.startTime && t.startTime.startsWith(dateStr)));
-          const flexTasks = scheduledTasks.filter(t => t.recurrenceMode === 'flexivel');
+          // STRICT CHECKING: Apenas datas reais gravadas possuem os pontos!
+          const fixedTasks = scheduledTasks.filter(t => {
+            if (t.recurrenceMode === 'exata') {
+              const dayOfWeek = new Date(year, month, day).getDay().toString();
+              return (t.recurrenceExactDays || []).includes(dayOfWeek);
+            }
+            return (t.startTime && t.startTime.startsWith(dateStr)) || (t.scheduledAt && t.scheduledAt.startsWith(dateStr));
+          });
+
+          const flexTasks = scheduledTasks.filter(t => {
+            if (t.recurrenceMode !== 'flexivel') return false;
+            return (t.startTime && t.startTime.startsWith(dateStr)) || (t.scheduledAt && t.scheduledAt.startsWith(dateStr));
+          });
 
           const hasFixed = fixedTasks.length > 0;
           const hasFlex = flexTasks.length > 0;
 
           return (
-            <div key={idx} className="h-7 border border-white/5 rounded flex flex-col items-center justify-center relative bg-white/3">
+            <div
+              key={idx}
+              onDoubleClick={() => setTimelineDay(day)}
+              title="Clique duas vezes para ver horários (00:00 - 23:00)"
+              className="h-7 border border-white/5 rounded flex flex-col items-center justify-center relative bg-white/3 cursor-pointer hover:bg-white/10 transition-all select-none"
+            >
               <span className="opacity-70 text-[9px]">{day}</span>
               <div className="flex gap-0.5 mt-0.5">
                 {hasFixed && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_4px_rgba(59,130,246,0.8)]" title="Horário Fixo" />}

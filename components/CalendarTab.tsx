@@ -115,7 +115,7 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
     });
 
     return (
-        <div className="w-full flex flex-col items-center gap-8 pt-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+        <div className="w-full flex flex-col h-full overflow-y-auto space-y-6 pt-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
             {/* Header Section */}
             <div className="w-full flex justify-between items-end mb-2">
                 <div>
@@ -130,14 +130,65 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl rounded-full" />
 
                     <div className="flex justify-between items-center mb-8">
-                        <h3 className="text-lg font-black tracking-tighter uppercase italic opacity-70">{monthName}</h3>
+                        <h3 className="text-lg font-black tracking-tighter uppercase italic opacity-70">
+                          {monthName} {timelineDay ? `- Dia ${timelineDay} (Timeline)` : ''}
+                        </h3>
                         <div className="flex gap-2">
-                            <button onClick={() => setSelectedDate(new Date(selectedDate.setMonth(selectedDate.getMonth() - 1)))} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'} border ${isDark ? 'border-white/5' : 'border-slate-100'}`}>‹</button>
-                            <button onClick={() => setSelectedDate(new Date(selectedDate.setMonth(selectedDate.getMonth() + 1)))} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'} border ${isDark ? 'border-white/5' : 'border-slate-100'}`}>›</button>
+                            {timelineDay !== null ? (
+                              <button
+                                onClick={() => setTimelineDay(null)}
+                                className="px-3 py-1.5 rounded-xl bg-blue-600/30 border border-blue-500/40 text-xs font-black text-blue-200 uppercase hover:bg-blue-600/50"
+                              >
+                                ← Voltar para o Mês
+                              </button>
+                            ) : (
+                              <>
+                                <button onClick={() => setSelectedDate(new Date(selectedDate.setMonth(selectedDate.getMonth() - 1)))} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'} border ${isDark ? 'border-white/5' : 'border-slate-100'}`}>‹</button>
+                                <button onClick={() => setSelectedDate(new Date(selectedDate.setMonth(selectedDate.getMonth() + 1)))} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50'} border ${isDark ? 'border-white/5' : 'border-slate-100'}`}>›</button>
+                              </>
+                            )}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-4">
+                    {timelineDay !== null ? (
+                      /* Linha do Tempo (Timeline 00:00 - 23:00) */
+                      <div className="space-y-2 max-h-[450px] overflow-y-auto pr-2 font-mono text-xs">
+                        {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00').map(h => {
+                          const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(timelineDay).padStart(2, '0')}`;
+                          const dayTasksAtHour = tasks.filter(t => {
+                            const startTime = t.start_time || t.scheduled_at || '';
+                            return startTime.startsWith(dateStr) && startTime.slice(11, 13) + ':00' === h;
+                          });
+                          const dayRemindersAtHour = reminders.filter(r => {
+                            const trigger = r.trigger_at || '';
+                            return trigger.startsWith(dateStr) && trigger.slice(11, 13) + ':00' === h;
+                          });
+
+                          return (
+                            <div key={h} className="flex items-start gap-4 border-b border-white/5 py-2">
+                              <span className="w-16 font-bold text-white/40">{h}</span>
+                              <div className="flex-1 space-y-1">
+                                {dayTasksAtHour.map(t => (
+                                  <div key={t.id} className="bg-blue-600/20 border border-blue-500/40 p-2 rounded-xl text-blue-200 font-sans font-bold flex justify-between items-center">
+                                    <span>📋 {t.name}</span>
+                                    <span className="text-[10px] opacity-60">{t.estimated_minutes}m</span>
+                                  </div>
+                                ))}
+                                {dayRemindersAtHour.map(r => (
+                                  <div key={r.id} className="bg-purple-600/20 border border-purple-500/40 p-2 rounded-xl text-purple-200 font-sans font-bold">
+                                    🔔 {r.title}
+                                  </div>
+                                ))}
+                                {dayTasksAtHour.length === 0 && dayRemindersAtHour.length === 0 && (
+                                  <span className="text-white/10 text-[10px]">-- horário livre --</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-4">
                         {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'].map(d => (
                             <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest opacity-20 py-2">{d}</div>
                         ))}
@@ -155,13 +206,25 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
                                 return rd.getDate() === day && rd.getMonth() === selectedDate.getMonth() && rd.getFullYear() === selectedDate.getFullYear();
                             });
 
-                            const hasFixedTask = tasks.some(t => t.recurrence_mode === 'exata' || (t.start_time && t.start_time.startsWith(dateStr)));
-                            const hasFlexTask = tasks.some(t => t.recurrence_mode === 'flexivel');
+                            const hasFixedTask = tasks.some(t => {
+                              if (t.recurrence_mode === 'exata') {
+                                const dayOfWeek = currentCellDate.getDay().toString();
+                                return (t.recurrence_exact_days || []).includes(dayOfWeek);
+                              }
+                              return (t.start_time && t.start_time.startsWith(dateStr)) || (t.scheduled_at && t.scheduled_at.startsWith(dateStr));
+                            });
+
+                            const hasFlexTask = tasks.some(t => {
+                              if (t.recurrence_mode !== 'flexivel') return false;
+                              return (t.start_time && t.start_time.startsWith(dateStr)) || (t.scheduled_at && t.scheduled_at.startsWith(dateStr));
+                            });
 
                             return (
                                 <button
                                     key={day}
                                     onClick={() => setSelectedDate(currentCellDate)}
+                                    onDoubleClick={() => setTimelineDay(day)}
+                                    title="Clique duas vezes para ver horários (00:00 - 23:00)"
                                     className={`h-12 sm:h-14 rounded-2xl flex flex-col items-center justify-center relative transition-all duration-300 ${isSelected
                                         ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20 scale-105 z-10'
                                         : 'hover:bg-blue-500/10'
@@ -175,7 +238,8 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
                                 </button>
                             );
                         })}
-                    </div>
+                      </div>
+                    )}
                 </div>
 
                 {/* Reminders List */}
