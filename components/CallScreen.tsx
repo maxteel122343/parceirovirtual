@@ -919,8 +919,12 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
               // Send 16kHz downsampled PCM audio to Gemini Live session continuously
               if (isConnectedRef.current && resolvedSessionRef.current && inputAudioContextRef.current) {
-                const pcmBlob = createBlob(inputData);
-                resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                try {
+                  const pcmBlob = createBlob(inputData);
+                  resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                } catch (err) {
+                  // WebSocket is closing or closed - ignore silently
+                }
               }
             };
 
@@ -1334,6 +1338,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
             addConnectionLog('warning', `WebSocket fechado. Código: ${event?.code || 'sem código'}, Razão: ${event?.reason || 'sem razão'}`);
             setConnectionStatus(false);
+            resolvedSessionRef.current = null;
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
               videoIntervalRef.current = null;
@@ -1365,6 +1370,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             const errMsg = err?.message || (err instanceof Event ? 'Falha na conexão do WebSocket' : String(err));
             addConnectionLog('error', `Erro no WebSocket: ${errMsg}`);
             setConnectionStatus(false);
+            resolvedSessionRef.current = null;
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
               videoIntervalRef.current = null;
