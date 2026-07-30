@@ -941,10 +941,14 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
               // Send 16kHz downsampled PCM audio to Gemini Live session continuously
               if (isConnectedRef.current && resolvedSessionRef.current) {
-                const sampleRate = inputAudioContextRef.current.sampleRate;
-                const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
-                const pcmBlob = createBlob(downsampled);
-                resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                try {
+                  const sampleRate = inputAudioContextRef.current.sampleRate;
+                  const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
+                  const pcmBlob = createBlob(downsampled);
+                  resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                } catch (err) {
+                  console.warn('Suppressing sendRealtimeInput call on closed socket:', err);
+                }
               }
             };
 
@@ -1386,6 +1390,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           onclose: (event: any) => {
             console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
             addConnectionLog('warning', `WebSocket fechado. Código: ${event?.code || 'sem código'}, Razão: ${event?.reason || 'sem razão'}`);
+            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
@@ -1417,6 +1422,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             console.error("WebSocket error:", err); 
             const errMsg = err?.message || (err instanceof Event ? 'Falha na conexão do WebSocket' : String(err));
             addConnectionLog('error', `Erro no WebSocket: ${errMsg}`);
+            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
