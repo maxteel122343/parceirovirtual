@@ -863,7 +863,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
       const needsTranslation = captionsEnabled && captionLang !== profile.language;
 
       const config = {
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-3.1-flash-live-preview',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -890,6 +890,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               resolvedSessionRef.current = session;
             });
 
+            if (inputAudioContextRef.current?.state === 'suspended') {
+              inputAudioContextRef.current.resume();
+            }
             if (outputAudioContextRef.current?.state === 'suspended') {
               outputAudioContextRef.current.resume();
             }
@@ -940,15 +943,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               }
 
               // Send 16kHz downsampled PCM audio to Gemini Live session continuously
-              if (isConnectedRef.current && resolvedSessionRef.current) {
-                try {
-                  const sampleRate = inputAudioContextRef.current.sampleRate;
-                  const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
-                  const pcmBlob = createBlob(downsampled);
-                  resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
-                } catch (err) {
-                  console.warn('Suppressing sendRealtimeInput call on closed socket:', err);
-                }
+              if (isConnectedRef.current && resolvedSessionRef.current && inputAudioContextRef.current) {
+                const pcmBlob = createBlob(inputData);
+                resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };
 
@@ -1390,7 +1387,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           onclose: (event: any) => {
             console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
             addConnectionLog('warning', `WebSocket fechado. Código: ${event?.code || 'sem código'}, Razão: ${event?.reason || 'sem razão'}`);
-            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
@@ -1422,7 +1418,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             console.error("WebSocket error:", err); 
             const errMsg = err?.message || (err instanceof Event ? 'Falha na conexão do WebSocket' : String(err));
             addConnectionLog('error', `Erro no WebSocket: ${errMsg}`);
-            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
