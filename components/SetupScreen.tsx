@@ -813,10 +813,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
             {/* Sidebar - Vertical Navigation (Permanent) */}
             <aside
-                className={`fixed left-0 top-0 h-full z-[80] transition-all duration-500 ease-in-out border-r shadow-2xl flex flex-col py-8 ${isSidebarExpanded ? 'w-56 md:w-64' : 'w-16 md:w-20'} ${isLight ? 'bg-white/95 border-slate-100' : 'bg-[#0b0c10]/95 border-white/5'} backdrop-blur-2xl`}
+                className={`fixed left-0 top-0 h-full z-[80] transition-all duration-500 ease-in-out border-r shadow-2xl flex flex-col py-4 ${isSidebarExpanded ? 'w-56 md:w-64' : 'w-16 md:w-20'} ${isLight ? 'bg-white/95 border-slate-100' : 'bg-[#0b0c10]/95 border-white/5'} backdrop-blur-2xl`}
             >
                 {/* Expand/Collapse Toggle Layer - Desktop: Hover, Mobile/All: Click managed by buttons below */}
-                <div className={`mb-12 flex items-center gap-3 px-5 transition-all duration-500 ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
+                <div className={`mb-6 flex items-center gap-3 px-5 transition-all duration-500 ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
                     <div className="w-10 h-10 rounded-xl bg-blue-600 flex-shrink-0 flex items-center justify-center text-xl shadow-lg shadow-blue-500/20">⚡</div>
                     {isSidebarExpanded && (
                         <h1 className="text-lg font-black tracking-tighter uppercase italic truncate animate-in fade-in slide-in-from-left-4 duration-500">
