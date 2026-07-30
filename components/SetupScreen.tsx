@@ -832,7 +832,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
                         { id: 'calendar', label: 'Agenda', icon: '📅' },
-                        { id: 'tasks', label: 'Tarefas', icon: '📋' }
+                        { id: 'tasks', label: 'Tarefas', icon: '📋' },
+                        { id: 'stats', label: 'Estatísticas', icon: '📊' }
                     ].map(tab => (
                         <button
                             key={tab.id}
