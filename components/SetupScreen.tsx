@@ -9,6 +9,7 @@ import { supabase } from '../supabaseClient';
 import { ChatWindow } from './ChatWindow';
 import { MapTab } from './MapTab';
 import { InvitesTab } from './InvitesTab';
+import { TasksTab } from './TasksTab';
 import { addConnectionLog } from '../logger';
 
 interface SetupScreenProps {
@@ -38,12 +39,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         return () => window.removeEventListener('connection-log-updated', handleLogUpdate);
     }, []);
 
-    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites'>(() => {
+    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks'>(() => {
         const saved = sessionStorage.getItem('warm_activeTab');
         return (saved as any) || 'gallery';
     });
 
-    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites') => {
+    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks') => {
         sessionStorage.setItem('warm_activeTab', tab);
         setActiveTabState(tab);
     };
@@ -828,6 +829,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                 <nav className="flex-1 w-full px-3 space-y-2 overflow-y-auto no-scrollbar">
                     {[
                         { id: 'dashboard', label: 'Início', icon: '🏠' },
+                        { id: 'tasks', label: 'Tarefas', icon: '📋' },
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
                         { id: 'calendar', label: 'Agenda', icon: '📅' }
@@ -1178,6 +1180,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <div className="w-full">
+                                <TasksTab isDark={isDark} user={user} profile={profile} />
                             </div>
                         )}
 
