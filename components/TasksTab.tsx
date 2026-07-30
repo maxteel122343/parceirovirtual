@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ interface Subtask {
   done: boolean;
 }
 
-interface Task {
+export interface Task {
   id: string;
   name: string;
   category: string;
@@ -40,6 +41,12 @@ interface Task {
   rewards: string;
   notes: string;
   createdAt: string;
+  user_id?: string;
+}
+
+interface TasksTabProps {
+  user?: any;
+  initialMode?: 'table' | 'cards';
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -162,9 +169,9 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-xl font-black tracking-tighter text-white">
-                {initial ? '✏️ Editar Tarefa na Planilha' : '➕ Nova Tarefa para Planilha'}
+                {initial ? '✏️ Editar Tarefa' : '➕ Nova Tarefa'}
               </h2>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mt-1">Planilha Geral de Tarefas</p>
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mt-1">Gerenciador de Tarefas Sincronizado</p>
             </div>
             <button onClick={onClose} className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all">✕</button>
           </div>
@@ -376,7 +383,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                       value={subtaskInput}
                       onChange={e => setSubtaskInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addSubtask()}
-                      placeholder="Adicionar subpasso (Ex: Supino, Agachamento, Jogar Lixo...)"
+                      placeholder="Adicionar subpasso (Ex: Supino, Agachamento...)"
                       className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                     />
                     <button onClick={addSubtask} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-black transition-all">+</button>
@@ -440,7 +447,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
             disabled={!form.name.trim()}
             className="flex-1 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/30 transition-all"
           >
-            {initial ? 'Atualizar Tarefa' : 'Salvar na Planilha'} ✨
+            {initial ? 'Atualizar Tarefa' : 'Salvar Tarefa'} ✨
           </button>
         </div>
       </div>
@@ -448,16 +455,16 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
   );
 };
 
-// ─── Storage ──────────────────────────────────────────────────────────────────
+// ─── Local Storage Helper ─────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'tasks_v1';
 
-const loadTasks = (): Task[] => {
+const loadLocalTasks = (): Task[] => {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
   catch { return []; }
 };
 
-const saveTasks = (tasks: Task[]) => {
+const saveLocalTasks = (tasks: Task[]) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 };
 
@@ -466,8 +473,8 @@ type SortMode = 'created' | 'class' | 'status' | 'category';
 
 // ─── Main TasksTab Component ──────────────────────────────────────────────────
 
-export const TasksTab: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>(loadTasks);
+export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' }) => {
+  const [tasks, setTasks] = useState<Task[]>(loadLocalTasks);
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
@@ -475,27 +482,126 @@ export const TasksTab: React.FC = () => {
   const [filterType, setFilterType] = useState<TaskType | 'all'>('all');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(initialMode);
+  const [cardsLayout, setCardsLayout] = useState<'grid' | 'feed'>('grid'); // Layout dos cards: grade (grid) ou feed (lista 1 col)
 
-  useEffect(() => { saveTasks(tasks); }, [tasks]);
+  useEffect(() => {
+    setViewMode(initialMode);
+  }, [initialMode]);
 
-  const upsert = (task: Task) => {
-    setTasks(prev => {
-      const idx = prev.findIndex(t => t.id === task.id);
-      if (idx >= 0) { const next = [...prev]; next[idx] = task; return next; }
-      return [task, ...prev];
-    });
+  // Sync Supabase tasks
+  const fetchSupabaseTasks = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('user_tasks')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const formatted: Task[] = data.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category || '',
+        status: item.status || 'em_aberto',
+        taskClass: item.task_class || 'B',
+        taskType: item.task_type || 'normal',
+        recurrenceMode: item.recurrence_mode || 'unica',
+        recurrenceExactTime: item.recurrence_exact_time,
+        recurrenceExactDays: item.recurrence_exact_days || [],
+        recurrenceFlexHours: item.recurrence_flex_hours,
+        timesCompleted: item.times_completed || 0,
+        estimatedMinutes: item.estimated_minutes || 15,
+        lastCompletedAt: item.last_completed_at,
+        locality: item.locality || '',
+        subtasks: item.subtasks || [],
+        rewards: item.rewards || '',
+        notes: item.notes || '',
+        createdAt: item.created_at,
+        user_id: item.user_id,
+      }));
+
+      setTasks(formatted);
+      saveLocalTasks(formatted);
+    }
   };
 
-  const deleteTask = (id: string) => setTasks(prev => prev.filter(t => t.id !== id));
+  useEffect(() => {
+    fetchSupabaseTasks();
 
-  const completeTask = (id: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id !== id) return t;
-      const now = new Date().toISOString();
-      if (t.status === 'concluido') return { ...t, status: 'em_aberto' as TaskStatus };
-      return { ...t, status: 'concluido' as TaskStatus, timesCompleted: t.timesCompleted + 1, lastCompletedAt: now };
-    }));
+    if (!user) return;
+    // Realtime Sync entre dispositivos (PC <-> Mobile)
+    const channel = supabase
+      .channel('realtime_user_tasks')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_tasks', filter: `user_id=eq.${user.id}` }, () => {
+        fetchSupabaseTasks();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    saveLocalTasks(tasks);
+  }, [tasks]);
+
+  const upsert = async (task: Task) => {
+    const isNew = !tasks.some(t => t.id === task.id);
+    const updatedTasks = isNew ? [task, ...tasks] : tasks.map(t => t.id === task.id ? task : t);
+    setTasks(updatedTasks);
+    saveLocalTasks(updatedTasks);
+
+    if (user) {
+      await supabase.from('user_tasks').upsert({
+        id: task.id,
+        user_id: user.id,
+        name: task.name,
+        category: task.category,
+        status: task.status,
+        task_class: task.taskClass,
+        task_type: task.taskType,
+        recurrence_mode: task.recurrenceMode,
+        recurrence_exact_time: task.recurrenceExactTime,
+        recurrence_exact_days: task.recurrenceExactDays,
+        recurrence_flex_hours: task.recurrenceFlexHours,
+        times_completed: task.timesCompleted,
+        estimated_minutes: task.estimatedMinutes,
+        last_completed_at: task.lastCompletedAt,
+        locality: task.locality,
+        subtasks: task.subtasks,
+        rewards: task.rewards,
+        notes: task.notes,
+        created_at: task.createdAt
+      });
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    const updated = tasks.filter(t => t.id !== id);
+    setTasks(updated);
+    saveLocalTasks(updated);
+
+    if (user) {
+      await supabase.from('user_tasks').delete().eq('id', id).eq('user_id', user.id);
+    }
+  };
+
+  const completeTask = async (id: string) => {
+    const target = tasks.find(t => t.id === id);
+    if (!target) return;
+
+    const now = new Date().toISOString();
+    const isAlreadyDone = target.status === 'concluido';
+    const updatedTask: Task = {
+      ...target,
+      status: isAlreadyDone ? 'em_aberto' : 'concluido',
+      timesCompleted: isAlreadyDone ? target.timesCompleted : target.timesCompleted + 1,
+      lastCompletedAt: isAlreadyDone ? target.lastCompletedAt : now,
+    };
+
+    upsert(updatedTask);
   };
 
   const categories = [...new Set(tasks.map(t => t.category).filter(Boolean))];
@@ -523,29 +629,55 @@ export const TasksTab: React.FC = () => {
       <div className="px-6 pt-6 pb-4 bg-[#1f2636] border-b border-white/10">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl shadow-lg">📋</div>
+            <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl shadow-lg">
+              {viewMode === 'table' ? '📋' : '📊'}
+            </div>
             <div>
-              <h1 className="text-xl font-black tracking-tighter uppercase">PLANILHA GERAL DE TAREFAS</h1>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">Visão Geral Completa de Produtividade</p>
+              <h1 className="text-xl font-black tracking-tighter uppercase">
+                {viewMode === 'table' ? 'PLANILHA GERAL DE TAREFAS' : 'SESSÃO DE CARDS / FEED DE TAREFAS'}
+              </h1>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">
+                {viewMode === 'table' ? 'Visão Geral Ampla em Tabela (DataGrid)' : 'Feed Interativo de Cards'}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Toggle View */}
+            {/* View Mode Selector */}
             <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
               <button
                 onClick={() => setViewMode('table')}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
               >
-                📊 Tabela
+                📋 Planilha
               </button>
               <button
                 onClick={() => setViewMode('cards')}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'cards' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
               >
-                🎴 Cards
+                📊 Cards/Feed
               </button>
             </div>
+
+            {/* Layout dos Cards (quando no modo cards) */}
+            {viewMode === 'cards' && (
+              <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
+                <button
+                  onClick={() => setCardsLayout('grid')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${cardsLayout === 'grid' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                  title="Layout em Grade"
+                >
+                  田 Grade
+                </button>
+                <button
+                  onClick={() => setCardsLayout('feed')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${cardsLayout === 'feed' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                  title="Layout em Feed (Coluna Única Rola)"
+                >
+                  ☰ Feed
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => { setEditingTask(undefined); setShowForm(true); }}
@@ -632,10 +764,10 @@ export const TasksTab: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-64 opacity-30">
             <span className="text-6xl mb-4">📋</span>
             <p className="text-sm font-black uppercase tracking-widest">Nenhuma tarefa encontrada</p>
-            <p className="text-[10px] mt-1">Clique em "+ Nova Tarefa" ou peça à IA durante a chamada para adicionar!</p>
+            <p className="text-[10px] mt-1">Clique em "+ Nova Tarefa" para adicionar!</p>
           </div>
         ) : viewMode === 'table' ? (
-          /* 📊 PLANILHA GERAL DE TAREFAS (DATAGRID TABLE) */
+          /* 📋 PLANILHA GERAL DE TAREFAS (DATAGRID TABLE) */
           <div className="w-full overflow-x-auto border border-white/10 rounded-xl shadow-2xl bg-[#1d2332]">
             <table className="w-full text-left border-collapse text-xs whitespace-nowrap min-w-[1200px]">
               <thead>
@@ -669,17 +801,14 @@ export const TasksTab: React.FC = () => {
                       key={t.id}
                       className={`hover:bg-white/5 transition-colors ${t.status === 'concluido' ? 'opacity-60 bg-emerald-950/10' : ''}`}
                     >
-                      {/* ID / Checkbox */}
                       <td className="p-3 text-center border-r border-white/5 font-mono text-[10px] opacity-40">
                         {idx + 1}
                       </td>
 
-                      {/* Name */}
                       <td className="p-3 border-r border-white/5 font-bold text-white max-w-[200px] truncate">
                         <span className={t.status === 'concluido' ? 'line-through text-white/40' : ''}>{t.name}</span>
                       </td>
 
-                      {/* Categoria */}
                       <td className="p-3 border-r border-white/5">
                         {t.category ? (
                           <span className="px-2.5 py-1 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 text-[10px] font-bold">
@@ -688,28 +817,24 @@ export const TasksTab: React.FC = () => {
                         ) : <span className="opacity-20">--</span>}
                       </td>
 
-                      {/* Tipo */}
                       <td className="p-3 border-r border-white/5">
                         <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${type.bg} ${type.color}`}>
                           {type.icon} {type.label}
                         </span>
                       </td>
 
-                      {/* Classe */}
                       <td className="p-3 border-r border-white/5">
                         <span className={`px-2 py-0.5 rounded-md border text-[10px] font-black ${cls.bg} ${cls.color}`}>
                           {cls.label}
                         </span>
                       </td>
 
-                      {/* Localidade */}
                       <td className="p-3 border-r border-white/5">
                         {t.locality ? (
                           <span className="text-[11px] text-slate-300">📍 {t.locality}</span>
                         ) : <span className="opacity-20">--</span>}
                       </td>
 
-                      {/* Recorrência */}
                       <td className="p-3 border-r border-white/5 text-[11px] text-slate-300">
                         {t.recurrenceMode === 'exata' ? (
                           <span>📅 Exata ({t.recurrenceExactTime || 'Fixa'})</span>
@@ -720,24 +845,20 @@ export const TasksTab: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Status */}
                       <td className="p-3 border-r border-white/5 text-center">
                         <span className={`px-2.5 py-1 rounded-lg border text-[10px] font-black ${status.bg}`}>
                           {status.icon} {status.label}
                         </span>
                       </td>
 
-                      {/* Duração Est. */}
                       <td className="p-3 border-r border-white/5 text-center font-mono opacity-80">
                         {t.estimatedMinutes}m
                       </td>
 
-                      {/* Quant. Feita */}
                       <td className="p-3 border-r border-white/5 text-center font-mono font-bold">
                         {t.timesCompleted}
                       </td>
 
-                      {/* Subtarefas / Progresso */}
                       <td className="p-3 border-r border-white/5">
                         {t.subtasks.length > 0 ? (
                           <div className="flex items-center gap-2">
@@ -751,22 +872,18 @@ export const TasksTab: React.FC = () => {
                         ) : <span className="opacity-20">--</span>}
                       </td>
 
-                      {/* Propriedades Ganhas */}
                       <td className="p-3 border-r border-white/5 text-amber-300 font-medium max-w-[180px] truncate">
                         {t.rewards ? `+${t.rewards}` : <span className="opacity-20">--</span>}
                       </td>
 
-                      {/* Inércia Atual */}
                       <td className="p-3 border-r border-white/5 font-mono text-orange-300">
                         <InertiaClock lastCompletedAt={t.lastCompletedAt} />
                       </td>
 
-                      {/* Notas */}
                       <td className="p-3 border-r border-white/5 opacity-60 italic max-w-[150px] truncate">
                         {t.notes || '--'}
                       </td>
 
-                      {/* Ações */}
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
@@ -801,45 +918,78 @@ export const TasksTab: React.FC = () => {
             </table>
           </div>
         ) : (
-          /* 🎴 VISUALIZAÇÃO EM CARDS */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          /* 📊 SESSÃO DE CARDS / FEED DE TAREFAS (Grade ou Feed Vertical Rola) */
+          <div className={cardsLayout === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "flex flex-col space-y-4 max-w-3xl mx-auto"}>
             {filtered.map(t => {
               const status = STATUS_META[t.status];
               const type = TYPE_META[t.taskType];
               const cls = CLASS_META[t.taskClass];
 
               return (
-                <div key={t.id} className="bg-[#1d2332] border border-white/10 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                <div key={t.id} className="bg-[#1d2332] border border-white/10 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl hover:border-blue-500/40 transition-all">
                   <div className="flex justify-between items-start">
-                    <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black ${cls.bg} ${cls.color}`}>
-                      {cls.label}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black ${status.bg}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-1 rounded-md border text-[10px] font-black ${cls.bg} ${cls.color}`}>
+                        {cls.label}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${type.bg} ${type.color}`}>
+                        {type.icon} {type.label}
+                      </span>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-lg border text-[10px] font-black ${status.bg}`}>
                       {status.icon} {status.label}
                     </span>
                   </div>
 
                   <div>
-                    <h3 className={`text-base font-bold text-white ${t.status === 'concluido' ? 'line-through text-white/40' : ''}`}>
+                    <h3 className={`text-lg font-bold text-white ${t.status === 'concluido' ? 'line-through text-white/40' : ''}`}>
                       {t.name}
                     </h3>
-                    <div className="flex gap-2 items-center mt-1 text-[10px] text-white/50">
-                      <span>{type.icon} {type.label}</span>
-                      {t.category && <span>• 📦 {t.category}</span>}
-                      {t.locality && <span>• 📍 {t.locality}</span>}
+                    <div className="flex flex-wrap gap-3 items-center mt-2 text-xs text-white/60">
+                      {t.category && <span>📦 <strong className="text-pink-300">{t.category}</strong></span>}
+                      {t.locality && <span>📍 <strong className="text-slate-200">{t.locality}</strong></span>}
+                      <span>⏱️ Est: {t.estimatedMinutes}m</span>
                     </div>
                   </div>
 
-                  {t.rewards && (
-                    <p className="text-[10px] text-amber-300 font-semibold">🏆 Recompensa: +{t.rewards}</p>
+                  {t.subtasks.length > 0 && (
+                    <div className="bg-white/5 border border-white/5 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-white/40">Subtarefas ({t.subtasks.filter(s => s.done).length}/{t.subtasks.length})</p>
+                      <div className="space-y-1">
+                        {t.subtasks.map(s => (
+                          <div key={s.id} className="flex items-center gap-2 text-xs">
+                            <span className={s.done ? 'text-emerald-400' : 'text-white/30'}>{s.done ? '✓' : '•'}</span>
+                            <span className={s.done ? 'line-through text-white/40' : 'text-white/80'}>{s.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
-                  <div className="flex justify-between items-center pt-2 border-t border-white/5 text-[10px] text-white/40">
-                    <span>Inércia: <InertiaClock lastCompletedAt={t.lastCompletedAt} /></span>
-                    <div className="flex gap-1">
-                      <button onClick={() => completeTask(t.id)} className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded hover:bg-emerald-500/40">✓ Feito</button>
-                      <button onClick={() => { setEditingTask(t); setShowForm(true); }} className="px-2 py-1 bg-white/5 rounded hover:bg-white/10">✏️</button>
-                      <button onClick={() => deleteTask(t.id)} className="px-2 py-1 bg-rose-500/20 text-rose-300 rounded hover:bg-rose-500/40">🗑️</button>
+                  {t.rewards && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3.5 py-2 text-xs text-amber-300 font-semibold flex items-center gap-2">
+                      <span>🏆 Recompensa:</span>
+                      <span>+{t.rewards}</span>
+                    </div>
+                  )}
+
+                  {t.notes && (
+                    <p className="text-xs text-white/50 italic bg-white/5 p-3 rounded-xl">"{t.notes}"</p>
+                  )}
+
+                  <div className="flex justify-between items-center pt-3 border-t border-white/10 text-xs text-white/50">
+                    <span className="font-mono text-orange-300">Inércia: <InertiaClock lastCompletedAt={t.lastCompletedAt} /></span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => completeTask(t.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          t.status === 'concluido' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow'
+                        }`}
+                      >
+                        {t.status === 'concluido' ? '✓ Feito' : 'Concluir'}
+                      </button>
+                      <button onClick={() => { setEditingTask(t); setShowForm(true); }} className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10">✏️</button>
+                      <button onClick={() => deleteTask(t.id)} className="px-2.5 py-1.5 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 rounded-lg border border-rose-500/20">🗑️</button>
                     </div>
                   </div>
                 </div>

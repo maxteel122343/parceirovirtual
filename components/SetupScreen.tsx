@@ -39,12 +39,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         return () => window.removeEventListener('connection-log-updated', handleLogUpdate);
     }, []);
 
-    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks'>(() => {
+    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks' | 'stats'>(() => {
         const saved = sessionStorage.getItem('warm_activeTab');
         return (saved as any) || 'gallery';
     });
 
-    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks') => {
+    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks' | 'stats') => {
         sessionStorage.setItem('warm_activeTab', tab);
         setActiveTabState(tab);
     };
@@ -2191,7 +2191,13 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
                         {activeTab === 'tasks' && (
                             <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-220px)] overflow-hidden rounded-[2rem]">
-                                <TasksTab />
+                                <TasksTab user={user} initialMode="table" />
+                            </div>
+                        )}
+
+                        {activeTab === 'stats' && (
+                            <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-220px)] overflow-hidden rounded-[2rem]">
+                                <TasksTab user={user} initialMode="cards" />
                             </div>
                         )}
                     </div>
