@@ -44,6 +44,9 @@ export interface Task {
   user_id?: string;
   isPeriodicallyActive?: boolean;
   scheduledAt?: string; // Data e hora distribuída na agenda
+  startTime?: string;   // Data/Hora de Início (ISO string)
+  endTime?: string;     // Data/Hora de Término calculada (ISO string)
+  reminderMinutes?: number; // Lembrete IA a cada X minutos
 }
 
 interface TasksTabProps {
@@ -91,24 +94,32 @@ const elapsedSince = (isoDate?: string): string => {
   return `${m}m sem fazer`;
 };
 
-const blankTask = (): Omit<Task, 'id' | 'createdAt'> => ({
-  name: '',
-  category: '',
-  status: 'em_aberto',
-  taskClass: 'B',
-  taskType: 'normal',
-  recurrenceMode: 'unica',
-  recurrenceExactTime: '',
-  recurrenceExactDays: [],
-  recurrenceFlexHours: 24,
-  timesCompleted: 0,
-  estimatedMinutes: 15,
-  lastCompletedAt: undefined,
-  locality: '',
-  subtasks: [],
-  rewards: '',
-  notes: '',
-});
+const blankTask = (): Omit<Task, 'id' | 'createdAt'> => {
+  const now = new Date();
+  const nowIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const endIso = new Date(now.getTime() + 15 * 60000 - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return {
+    name: '',
+    category: '',
+    status: 'em_aberto',
+    taskClass: 'B',
+    taskType: 'normal',
+    recurrenceMode: 'unica',
+    recurrenceExactTime: '',
+    recurrenceExactDays: [],
+    recurrenceFlexHours: 24,
+    timesCompleted: 0,
+    estimatedMinutes: 15,
+    lastCompletedAt: undefined,
+    locality: '',
+    subtasks: [],
+    rewards: '',
+    notes: '',
+    startTime: nowIso,
+    endTime: endIso,
+    reminderMinutes: 60,
+  };
+};
 
 const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 mb-1.5">{children}</p>
@@ -123,15 +134,89 @@ const InertiaClock: React.FC<{ lastCompletedAt?: string }> = ({ lastCompletedAt 
   return <span>{elapsed}</span>;
 };
 
+// ─── Mini Calendar Component for Form ──────────────────────────────────────────
+
+const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) => {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+  const daysArray = [];
+  for (let i = 0; i < firstDay; i++) daysArray.push(null);
+  for (let d = 1; d <= daysInMonth; d++) daysArray.push(d);
+
+  return (
+    <div className="bg-black/30 border border-white/10 rounded-2xl p-4 space-y-3">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-black text-blue-300 uppercase">{monthNames[month]} {year}</span>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}
+            className="w-6 h-6 rounded bg-white/5 hover:bg-white/10 text-xs text-white"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}
+            className="w-6 h-6 rounded bg-white/5 hover:bg-white/10 text-xs text-white"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center text-[8px] font-black text-white/40 uppercase">
+        <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center font-mono text-[10px]">
+        {daysArray.map((day, idx) => {
+          if (!day) return <div key={idx} className="h-6" />;
+          
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          
+          // Verificar se há tarefas agendadas neste dia (Azul = Fixo, Vermelho = Flexível)
+          const fixedTasks = scheduledTasks.filter(t => t.recurrenceMode === 'exata' || (t.startTime && t.startTime.startsWith(dateStr)));
+          const flexTasks = scheduledTasks.filter(t => t.recurrenceMode === 'flexivel');
+
+          const hasFixed = fixedTasks.length > 0;
+          const hasFlex = flexTasks.length > 0;
+
+          return (
+            <div key={idx} className="h-7 border border-white/5 rounded flex flex-col items-center justify-center relative bg-white/3">
+              <span className="opacity-70 text-[9px]">{day}</span>
+              <div className="flex gap-0.5 mt-0.5">
+                {hasFixed && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_4px_rgba(59,130,246,0.8)]" title="Horário Fixo" />}
+                {hasFlex && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_4px_rgba(244,63,94,0.8)]" title="Flexível" />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-around pt-2 border-t border-white/5 text-[8px] uppercase font-bold">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Horário Fixo</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" /> Recorrência Flexível</span>
+      </div>
+    </div>
+  );
+};
+
 // ─── Task Form Modal ──────────────────────────────────────────────────────────
 
 interface TaskFormProps {
   initial?: Task;
+  allTasks?: Task[];
   onSave: (task: Task) => void;
   onClose: () => void;
 }
 
-const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) => {
+const TaskFormModal: React.FC<TaskFormProps> = ({ initial, allTasks = [], onSave, onClose }) => {
   const [form, setForm] = useState<Omit<Task, 'id' | 'createdAt'>>(
     initial ? { ...initial } : blankTask()
   );
@@ -140,6 +225,21 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) =>
     setForm(prev => ({ ...prev, [key]: val }));
+
+  // Função para recalcular horário de término dinamicamente
+  const handleDurationOrStartChange = (newStart?: string, newMinutes?: number) => {
+    const start = newStart !== undefined ? newStart : form.startTime;
+    const duration = newMinutes !== undefined ? newMinutes : form.estimatedMinutes;
+
+    if (start) {
+      const startDate = new Date(start);
+      const endDate = new Date(startDate.getTime() + (duration || 0) * 60000);
+      const endIso = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setForm(prev => ({ ...prev, startTime: start, estimatedMinutes: duration, endTime: endIso }));
+    } else {
+      setForm(prev => ({ ...prev, estimatedMinutes: duration }));
+    }
+  };
 
   const addSubtask = () => {
     if (!subtaskInput.trim() || form.subtasks.length >= 5) return;
@@ -165,7 +265,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="w-full max-w-2xl bg-[#131722] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-4xl bg-[#131722] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-8 pt-8 pb-5 border-b border-white/10 bg-slate-900/50">
           <div className="flex items-center justify-between mb-5">
@@ -192,251 +292,304 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
           </div>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-          {activeSection === 'main' && (
-            <>
-              <div>
-                <FieldLabel>Nome da Tarefa *</FieldLabel>
-                <input
-                  value={form.name}
-                  onChange={e => set('name', e.target.value)}
-                  placeholder="Ex: Treino de Musculação, Limpar Pia Banheiro..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel>Categoria</FieldLabel>
-                  <input
-                    value={form.category}
-                    onChange={e => set('category', e.target.value)}
-                    placeholder="Ex: Saúde/Fitness, Casa, Trabalho"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Localidade</FieldLabel>
-                  <input
-                    value={form.locality}
-                    onChange={e => set('locality', e.target.value)}
-                    placeholder="Ex: Academia, Banheiro, Cozinha"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Status Atual</FieldLabel>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(Object.entries(STATUS_META) as [TaskStatus, typeof STATUS_META[TaskStatus]][]).map(([key, meta]) => (
-                    <button
-                      key={key}
-                      onClick={() => set('status', key)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                        form.status === key ? `${meta.bg} font-black border-current shadow-md` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-80 text-white'
-                      }`}
-                    >
-                      <span>{meta.icon}</span>
-                      <span className="text-[10px] font-bold truncate">{meta.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Classe / Prioridade</FieldLabel>
-                <div className="flex gap-3">
-                  {(['A', 'B', 'C'] as TaskClass[]).map(c => (
-                    <button
-                      key={c}
-                      onClick={() => set('taskClass', c)}
-                      className={`flex-1 py-3 rounded-xl border text-[11px] font-black uppercase transition-all ${
-                        form.taskClass === c ? `${CLASS_META[c].bg} ${CLASS_META[c].color} border-current` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-70 text-white'
-                      }`}
-                    >
-                      {CLASS_META[c].label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Tipo de Tarefa</FieldLabel>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.entries(TYPE_META) as [TaskType, typeof TYPE_META[TaskType]][]).map(([key, meta]) => (
-                    <button
-                      key={key}
-                      onClick={() => set('taskType', key)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-black uppercase transition-all ${
-                        form.taskType === key ? `bg-blue-600/30 border-blue-500/50 text-blue-200` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
-                      }`}
-                    >
-                      <span>{meta.icon}</span>{meta.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {activeSection === 'time' && (
-            <>
-              <div>
-                <FieldLabel>Modo de Recorrência</FieldLabel>
-                <div className="flex gap-3">
-                  {([['unica', '1x Única'], ['exata', '📅 Exata'], ['flexivel', '🔄 Flexível']] as [RecurrenceMode, string][]).map(([m, label]) => (
-                    <button
-                      key={m}
-                      onClick={() => set('recurrenceMode', m)}
-                      className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${
-                        form.recurrenceMode === m ? 'bg-blue-600/30 border-blue-500/50 text-blue-200' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {form.recurrenceMode === 'exata' && (
-                <div className="space-y-4">
+        {/* Body com Grid Principal (Formulário + Mini Calendário na Direita) */}
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Lado Esquerdo / Centro: Formulário Principal (2 cols) */}
+            <div className="lg:col-span-2 space-y-6">
+              {activeSection === 'main' && (
+                <>
                   <div>
-                    <FieldLabel>Horário Exato</FieldLabel>
+                    <FieldLabel>Nome da Tarefa *</FieldLabel>
                     <input
-                      type="time"
-                      value={form.recurrenceExactTime || ''}
-                      onChange={e => set('recurrenceExactTime', e.target.value)}
-                      className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
+                      value={form.name}
+                      onChange={e => set('name', e.target.value)}
+                      placeholder="Ex: Treino de Musculação, Limpar Pia..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                     />
                   </div>
-                  <div>
-                    <FieldLabel>Dias Fixos</FieldLabel>
-                    <div className="flex gap-2 flex-wrap">
-                      {WEEKDAYS.map((d, i) => {
-                        const key = String(i);
-                        const active = (form.recurrenceExactDays || []).includes(key);
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              const current = form.recurrenceExactDays || [];
-                              set('recurrenceExactDays', active ? current.filter(x => x !== key) : [...current, key]);
-                            }}
-                            className={`w-10 h-10 rounded-xl text-[10px] font-black border transition-all ${
-                              active ? 'bg-blue-600 border-blue-500 text-white' : 'bg-white/5 border-white/10 text-white/40'
-                            }`}
-                          >{d}</button>
-                        );
-                      })}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <FieldLabel>Categoria</FieldLabel>
+                      <input
+                        value={form.category}
+                        onChange={e => set('category', e.target.value)}
+                        placeholder="Ex: Saúde/Fitness, Casa, Trabalho"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Localidade</FieldLabel>
+                      <input
+                        value={form.locality}
+                        onChange={e => set('locality', e.target.value)}
+                        placeholder="Ex: Academia, Banheiro, Cozinha"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
+                      />
                     </div>
                   </div>
-                </div>
-              )}
 
-              {form.recurrenceMode === 'flexivel' && (
-                <div>
-                  <FieldLabel>Intervalo de Recorrência (Horas)</FieldLabel>
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.recurrenceFlexHours || 24}
-                      onChange={e => set('recurrenceFlexHours', Number(e.target.value))}
-                      className="w-28 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
-                    />
-                    <span className="text-white/50 text-sm">horas (Ex: A cada 24h)</span>
+                  <div>
+                    <FieldLabel>Status Atual</FieldLabel>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {(Object.entries(STATUS_META) as [TaskStatus, typeof STATUS_META[TaskStatus]][]).map(([key, meta]) => (
+                        <button
+                          key={key}
+                          onClick={() => set('status', key)}
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                            form.status === key ? `${meta.bg} font-black border-current shadow-md` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-80 text-white'
+                          }`}
+                        >
+                          <span>{meta.icon}</span>
+                          <span className="text-[10px] font-bold truncate">{meta.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+
+                  <div>
+                    <FieldLabel>Classe / Prioridade</FieldLabel>
+                    <div className="flex gap-3">
+                      {(['A', 'B', 'C'] as TaskClass[]).map(c => (
+                        <button
+                          key={c}
+                          onClick={() => set('taskClass', c)}
+                          className={`flex-1 py-3 rounded-xl border text-[11px] font-black uppercase transition-all ${
+                            form.taskClass === c ? `${CLASS_META[c].bg} ${CLASS_META[c].color} border-current` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-70 text-white'
+                          }`}
+                        >
+                          {CLASS_META[c].label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Tipo de Tarefa</FieldLabel>
+                    <div className="flex flex-wrap gap-2">
+                      {(Object.entries(TYPE_META) as [TaskType, typeof TYPE_META[TaskType]][]).map(([key, meta]) => (
+                        <button
+                          key={key}
+                          onClick={() => set('taskType', key)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-black uppercase transition-all ${
+                            form.taskType === key ? `bg-blue-600/30 border-blue-500/50 text-blue-200` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
+                          }`}
+                        >
+                          <span>{meta.icon}</span>{meta.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
 
-              <div>
-                <FieldLabel>Duração Estimada (minutos)</FieldLabel>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.estimatedMinutes}
-                  onChange={e => set('estimatedMinutes', Number(e.target.value))}
-                  className="w-36 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
-                />
-              </div>
-            </>
-          )}
-
-          {activeSection === 'context' && (
-            <>
-              <div>
-                <FieldLabel>Subtarefas / Passos ({form.subtasks.length}/5)</FieldLabel>
-                <div className="space-y-2 mb-3">
-                  {form.subtasks.map(s => (
-                    <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl">
-                      <button onClick={() => toggleSubtask(s.id)} className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${s.done ? 'bg-emerald-500 border-emerald-400' : 'bg-white/10 border-white/20'}`}>
-                        {s.done && <span className="text-[10px] text-white font-black">✓</span>}
+              {activeSection === 'time' && (
+                <>
+                  {/* Datas de Início e Término Calculado */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div>
+                      <FieldLabel>Horário / Data de Início</FieldLabel>
+                      <input
+                        type="datetime-local"
+                        value={form.startTime || ''}
+                        onChange={e => handleDurationOrStartChange(e.target.value, form.estimatedMinutes)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/60 transition-all font-mono"
+                      />
+                      <button
+                        onClick={() => handleDurationOrStartChange('', form.estimatedMinutes)}
+                        className="text-[9px] text-white/40 hover:text-rose-400 mt-1 uppercase font-bold"
+                      >
+                        Limpar Início (Tornar Nulo)
                       </button>
-                      <span className={`flex-1 text-sm ${s.done ? 'line-through opacity-40' : 'text-white/90'}`}>{s.title}</span>
-                      <button onClick={() => removeSubtask(s.id)} className="text-white/30 hover:text-rose-400 transition-all text-xs">✕</button>
                     </div>
-                  ))}
-                </div>
-                {form.subtasks.length < 5 && (
-                  <div className="flex gap-2">
-                    <input
-                      value={subtaskInput}
-                      onChange={e => setSubtaskInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && addSubtask()}
-                      placeholder="Adicionar subpasso (Ex: Supino, Agachamento...)"
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
-                    />
-                    <button onClick={addSubtask} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-black transition-all">+</button>
+
+                    <div>
+                      <FieldLabel>Horário / Data de Término (Calculado)</FieldLabel>
+                      <div className="w-full bg-blue-600/10 border border-blue-500/30 rounded-xl px-3 py-2 text-xs text-blue-200 font-mono font-bold">
+                        {form.endTime ? new Date(form.endTime).toLocaleString('pt-BR') : 'Sem Término'}
+                      </div>
+                      <p className="text-[9px] text-blue-300/60 mt-1 italic">Calculado automaticamente via Duração Estimada</p>
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div>
-                <FieldLabel>Propriedades Ganhas / Recompensas</FieldLabel>
-                <input
-                  value={form.rewards}
-                  onChange={e => set('rewards', e.target.value)}
-                  placeholder="Ex: +Força Muscular, +Alimento Armazenado, Item Limpeza..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
-                />
-              </div>
+                  <div>
+                    <FieldLabel>Modo de Recorrência</FieldLabel>
+                    <div className="flex gap-3">
+                      {([['unica', '1x Única'], ['exata', '📅 Exata (Fixo)'], ['flexivel', '🔄 Flexível']] as [RecurrenceMode, string][]).map(([m, label]) => (
+                        <button
+                          key={m}
+                          onClick={() => set('recurrenceMode', m)}
+                          className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${
+                            form.recurrenceMode === m ? 'bg-blue-600/30 border-blue-500/50 text-blue-200' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              <div>
-                <FieldLabel>Notas / Observações</FieldLabel>
-                <textarea
-                  value={form.notes}
-                  onChange={e => set('notes', e.target.value)}
-                  rows={4}
-                  placeholder="Foco no Supino, Usar desinfetante..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all resize-none"
-                />
-              </div>
-            </>
-          )}
+                  {form.recurrenceMode === 'exata' && (
+                    <div className="space-y-4">
+                      <div>
+                        <FieldLabel>Horário Fixo Diário</FieldLabel>
+                        <input
+                          type="time"
+                          value={form.recurrenceExactTime || ''}
+                          onChange={e => set('recurrenceExactTime', e.target.value)}
+                          className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all font-mono"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Dias Fixos</FieldLabel>
+                        <div className="flex gap-2 flex-wrap">
+                          {WEEKDAYS.map((d, i) => {
+                            const key = String(i);
+                            const active = (form.recurrenceExactDays || []).includes(key);
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => {
+                                  const current = form.recurrenceExactDays || [];
+                                  set('recurrenceExactDays', active ? current.filter(x => x !== key) : [...current, key]);
+                                }}
+                                className={`w-10 h-10 rounded-xl text-[10px] font-black border transition-all ${
+                                  active ? 'bg-blue-600 border-blue-500 text-white' : 'bg-white/5 border-white/10 text-white/40'
+                                }`}
+                              >{d}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-          {activeSection === 'metrics' && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Quantidade Feita</p>
-                  <p className="text-3xl font-black text-white">{form.timesCompleted}</p>
-                </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Duração Est.</p>
-                  <p className="text-3xl font-black text-white">{form.estimatedMinutes}<span className="text-sm text-white/40">m</span></p>
-                </div>
-              </div>
+                  {form.recurrenceMode === 'flexivel' && (
+                    <div>
+                      <FieldLabel>Intervalo de Recorrência (Horas)</FieldLabel>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          min={1}
+                          value={form.recurrenceFlexHours || 24}
+                          onChange={e => set('recurrenceFlexHours', Number(e.target.value))}
+                          className="w-28 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all font-mono"
+                        />
+                        <span className="text-white/50 text-sm">horas (Ex: A cada 24h)</span>
+                      </div>
+                    </div>
+                  )}
 
-              <div className="bg-gradient-to-br from-amber-500/15 to-orange-500/15 border border-amber-500/30 rounded-2xl p-5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-2">⏱️ Inércia Atual (Tempo Sem Fazer)</p>
-                <p className="text-2xl font-black text-amber-300">
-                  <InertiaClock lastCompletedAt={form.lastCompletedAt} />
-                </p>
-              </div>
-            </>
-          )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <FieldLabel>Duração Estimada (minutos ou horas)</FieldLabel>
+                      <input
+                        type="number"
+                        min={1}
+                        value={form.estimatedMinutes}
+                        onChange={e => handleDurationOrStartChange(undefined, Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>🔔 Lembrete IA (Reminder a cada X min)</FieldLabel>
+                      <input
+                        type="number"
+                        min={5}
+                        step={5}
+                        value={form.reminderMinutes || 60}
+                        onChange={e => set('reminderMinutes', Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-amber-300 font-mono font-bold focus:outline-none focus:border-amber-500/60 transition-all"
+                      />
+                      <p className="text-[9px] text-amber-300/60 mt-1">IA lembra a cada X min em ligação ou notificação</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeSection === 'context' && (
+                <>
+                  <div>
+                    <FieldLabel>Subtarefas / Passos ({form.subtasks.length}/5)</FieldLabel>
+                    <div className="space-y-2 mb-3">
+                      {form.subtasks.map(s => (
+                        <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl">
+                          <button onClick={() => toggleSubtask(s.id)} className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${s.done ? 'bg-emerald-500 border-emerald-400' : 'bg-white/10 border-white/20'}`}>
+                            {s.done && <span className="text-[10px] text-white font-black">✓</span>}
+                          </button>
+                          <span className={`flex-1 text-sm ${s.done ? 'line-through opacity-40' : 'text-white/90'}`}>{s.title}</span>
+                          <button onClick={() => removeSubtask(s.id)} className="text-white/30 hover:text-rose-400 transition-all text-xs">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    {form.subtasks.length < 5 && (
+                      <div className="flex gap-2">
+                        <input
+                          value={subtaskInput}
+                          onChange={e => setSubtaskInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addSubtask()}
+                          placeholder="Adicionar subpasso..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
+                        />
+                        <button onClick={addSubtask} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-black transition-all">+</button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <FieldLabel>Propriedades Ganhas / Recompensas</FieldLabel>
+                    <input
+                      value={form.rewards}
+                      onChange={e => set('rewards', e.target.value)}
+                      placeholder="Ex: +Força Muscular, +Alimento Armazenado..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Notas / Observações</FieldLabel>
+                    <textarea
+                      value={form.notes}
+                      onChange={e => set('notes', e.target.value)}
+                      rows={4}
+                      placeholder="Anotações sobre a tarefa..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all resize-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {activeSection === 'metrics' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Quantidade Feita</p>
+                      <p className="text-3xl font-black text-white">{form.timesCompleted}</p>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Duração Est.</p>
+                      <p className="text-3xl font-black text-white">{form.estimatedMinutes}<span className="text-sm text-white/40">m</span></p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-amber-500/15 to-orange-500/15 border border-amber-500/30 rounded-2xl p-5">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-2">⏱️ Inércia Atual (Tempo Sem Fazer)</p>
+                    <p className="text-2xl font-black text-amber-300">
+                      <InertiaClock lastCompletedAt={form.lastCompletedAt} />
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Lado Direito: Mini Calendário da Agenda para Orientação Visual */}
+            <div className="space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-300">📅 Agenda Atual (Orientação)</p>
+              <MiniCalendar scheduledTasks={allTasks} />
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -490,6 +643,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
   // Configuração da Ativação Periódica
   const [periodicCount, setPeriodicCount] = useState<number>(5);
   const [periodicHours, setPeriodicHours] = useState<number>(24);
+  const [considerRecurrence, setConsiderRecurrence] = useState<boolean>(true);
   const [showPeriodicSettings, setShowPeriodicSettings] = useState<boolean>(false);
 
   useEffect(() => {
@@ -528,6 +682,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
         user_id: item.user_id,
         isPeriodicallyActive: item.is_periodically_active || false,
         scheduledAt: item.scheduled_at,
+        startTime: item.start_time,
+        endTime: item.end_time,
+        reminderMinutes: item.reminder_minutes,
       }));
 
       setTasks(formatted);
@@ -559,11 +716,24 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
   const triggerPeriodicActivation = async () => {
     if (tasks.length === 0) return;
 
-    // 1. Filtrar tarefas elegíveis (não concluídas)
+    // 1. Verificar tarefas que já possuem agendamento no período (últimas/próximas X horas)
+    const now = Date.now();
+    const periodEndMs = now + (periodicHours * 60 * 60 * 1000);
+
+    const alreadyScheduledInPeriod = tasks.filter(t => {
+      if (!t.scheduledAt && !t.startTime) return false;
+      const targetTime = new Date(t.scheduledAt || t.startTime || '').getTime();
+      return targetTime >= now && targetTime <= periodEndMs;
+    });
+
+    // Quanto falta para atingir o limite desejado periodicCount
+    const remainingSlots = Math.max(0, periodicCount - alreadyScheduledInPeriod.length);
+
+    // 2. Filtrar tarefas elegíveis (não concluídas)
     const pendingTasks = tasks.filter(t => t.status !== 'concluido');
     const pool = pendingTasks.length > 0 ? pendingTasks : tasks;
 
-    // 2. Pontuar cada tarefa com base em Inércia, Prioridade (Classe A > B > C) e Tipo
+    // 3. Pontuar cada tarefa com base em Inércia, Prioridade (Classe A > B > C) e Tipo
     const scored = pool.map(t => {
       let score = 0;
 
@@ -576,32 +746,41 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
       if (t.taskType === 'manutencao') score += 40;
       if (t.taskType === 'infra') score += 30;
 
+      // Se considerar frequência de recorrência estiver ATIVADO
+      if (considerRecurrence && t.recurrenceMode === 'flexivel' && t.recurrenceFlexHours) {
+        // Tarefas de alta frequência (ex: a cada 1 hora) ganham impulso
+        score += Math.max(0, (24 / t.recurrenceFlexHours) * 20);
+      }
+
       // Pontuação por Inércia (Tempo sem fazer)
       if (t.lastCompletedAt) {
         const hoursInactive = (Date.now() - new Date(t.lastCompletedAt).getTime()) / (1000 * 60 * 60);
-        score += Math.min(hoursInactive * 2, 200); // até +200 pontos para inércia longa
+        score += Math.min(hoursInactive * 2, 200);
       } else {
-        score += 80; // Nunca feita ganha impulso
+        score += 80;
       }
 
       return { task: t, score };
     });
 
-    // 3. Ordenar por maior pontuação e pegar as X melhores
     scored.sort((a, b) => b.score - a.score);
-    const selectedIds = new Set(scored.slice(0, periodicCount).map(s => s.task.id));
 
-    // 4. Distribuir horários na Agenda ao longo do período escolhido (ex: 48h / 10 tarefas = 1 a cada 4.8h)
+    // Selecionar as melhores até completar o limite desejado
+    const newlySelected = scored.slice(0, remainingSlots).map(s => s.task);
+    const allActiveInPeriod = [...alreadyScheduledInPeriod, ...newlySelected];
+
+    const selectedIds = new Set(allActiveInPeriod.map(t => t.id));
+
+    // 4. Distribuir horários na Agenda ao longo do período escolhido
     const intervalMs = (periodicHours * 60 * 60 * 1000) / Math.max(selectedIds.size, 1);
     let currentScheduleTime = Date.now();
 
     const updated = tasks.map(t => {
       if (selectedIds.has(t.id)) {
         currentScheduleTime += intervalMs;
-        const scheduledIso = new Date(currentScheduleTime).toISOString();
+        const scheduledIso = t.scheduledAt || t.startTime || new Date(currentScheduleTime).toISOString();
         
-        // Se a tarefa não tinha data agendada, cria entrada na Agenda do Supabase
-        if (user) {
+        if (user && !t.scheduledAt) {
           supabase.from('scheduled_calls').insert({
             user_id: user.id,
             target_time: scheduledIso,
@@ -650,11 +829,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
           created_at: t.createdAt,
           is_periodically_active: t.isPeriodicallyActive,
           scheduled_at: t.scheduledAt,
+          start_time: t.startTime,
+          end_time: t.endTime,
+          reminder_minutes: t.reminderMinutes,
         });
       }
     }
 
-    alert(`⚡ Ativação concluída! ${selectedIds.size} tarefas foram selecionadas pela IA e distribuídas nas próximas ${periodicHours} horas.`);
+    alert(`⚡ Ativação concluída! ${selectedIds.size} tarefas ativas no período de ${periodicHours} horas (incluindo as da agenda).`);
   };
 
   const upsert = async (task: Task) => {
@@ -854,6 +1036,18 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
                   className="w-20 bg-black/40 border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-xs text-amber-200 font-bold text-center focus:outline-none"
                 />
                 <span className="text-[10px] font-bold text-amber-200 uppercase">horas (Ex: 24h, 48h)</span>
+              </div>
+
+              <div className="flex items-center gap-2 border-l border-amber-500/30 pl-4">
+                <label className="flex items-center gap-2 text-[10px] font-bold text-amber-200 uppercase cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={considerRecurrence}
+                    onChange={e => setConsiderRecurrence(e.target.checked)}
+                    className="w-4 h-4 rounded bg-black/40 border-amber-500/40 text-amber-500 focus:ring-0"
+                  />
+                  <span>Considerar Frequência de Recorrência</span>
+                </label>
               </div>
 
               <button
@@ -1133,7 +1327,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
                       {t.category && <span>📦 <strong className="text-pink-300">{t.category}</strong></span>}
                       {t.locality && <span>📍 <strong className="text-slate-200">{t.locality}</strong></span>}
                       <span>⏱️ Est: {t.estimatedMinutes}m</span>
+                      {t.reminderMinutes && <span className="text-amber-300">🔔 IA Reminder: a cada {t.reminderMinutes}m</span>}
                     </div>
+                    {t.startTime && (
+                      <p className="text-[10px] text-blue-300 mt-1 font-mono">
+                        🗓️ Início: {new Date(t.startTime).toLocaleString('pt-BR')} 
+                        {t.endTime && ` → Término: ${new Date(t.endTime).toLocaleString('pt-BR')}`}
+                      </p>
+                    )}
                   </div>
 
                   {t.subtasks.length > 0 && (
@@ -1187,6 +1388,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
       {showForm && (
         <TaskFormModal
           initial={editingTask}
+          allTasks={tasks}
           onSave={upsert}
           onClose={() => { setShowForm(false); setEditingTask(undefined); }}
         />

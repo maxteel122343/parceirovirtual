@@ -86,6 +86,20 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
         fetchReminders();
     };
 
+    const [tasks, setTasks] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (user) {
+            fetchReminders();
+            fetchUserTasks();
+        }
+    }, [user]);
+
+    const fetchUserTasks = async () => {
+        const { data } = await supabase.from('user_tasks').select('*').eq('user_id', user.id);
+        if (data) setTasks(data);
+    };
+
     const getDaysInMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     const getFirstDayOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
 
@@ -130,24 +144,34 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
                         {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
                         {Array.from({ length: days }).map((_, i) => {
                             const day = i + 1;
-                            const isToday = new Date().toDateString() === new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day).toDateString();
+                            const currentCellDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day);
+                            const isToday = new Date().toDateString() === currentCellDate.toDateString();
                             const isSelected = selectedDate.getDate() === day;
+
+                            const dateStr = `${currentCellDate.getFullYear()}-${String(currentCellDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
                             const hasReminder = reminders.some(r => {
                                 const rd = new Date(r.trigger_at);
                                 return rd.getDate() === day && rd.getMonth() === selectedDate.getMonth() && rd.getFullYear() === selectedDate.getFullYear();
                             });
 
+                            const hasFixedTask = tasks.some(t => t.recurrence_mode === 'exata' || (t.start_time && t.start_time.startsWith(dateStr)));
+                            const hasFlexTask = tasks.some(t => t.recurrence_mode === 'flexivel');
+
                             return (
                                 <button
                                     key={day}
-                                    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day))}
+                                    onClick={() => setSelectedDate(currentCellDate)}
                                     className={`h-12 sm:h-14 rounded-2xl flex flex-col items-center justify-center relative transition-all duration-300 ${isSelected
                                         ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20 scale-105 z-10'
                                         : 'hover:bg-blue-500/10'
                                         } ${isToday && !isSelected ? 'border-2 border-blue-500/30 font-black' : 'font-bold'}`}
                                 >
                                     <span className="text-[14px]">{day}</span>
-                                    {hasReminder && <div className={`w-1 h-1 rounded-full absolute bottom-2.5 ${isSelected ? 'bg-white' : 'bg-blue-500'}`} />}
+                                    <div className="flex gap-1 absolute bottom-2">
+                                        {(hasReminder || hasFixedTask) && <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_4px_rgba(59,130,246,0.8)] ${isSelected ? 'bg-white' : 'bg-blue-400'}`} title="Horário Fixo / Lembrete" />}
+                                        {hasFlexTask && <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_4px_rgba(244,63,94,0.8)] ${isSelected ? 'bg-amber-300' : 'bg-rose-500'}`} title="Recorrência Flexível" />}
+                                    </div>
                                 </button>
                             );
                         })}
