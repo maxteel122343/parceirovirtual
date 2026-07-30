@@ -42,6 +42,8 @@ export interface Task {
   notes: string;
   createdAt: string;
   user_id?: string;
+  isPeriodicallyActive?: boolean;
+  scheduledAt?: string; // Data e hora distribuída na agenda
 }
 
 interface TasksTabProps {
@@ -468,8 +470,8 @@ const saveLocalTasks = (tasks: Task[]) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 };
 
-type FilterStatus = 'all' | TaskStatus;
-type SortMode = 'created' | 'class' | 'status' | 'category';
+type FilterStatus = 'all' | 'periodic' | TaskStatus;
+type SortMode = 'created' | 'class' | 'status' | 'category' | 'inertia';
 
 // ─── Main TasksTab Component ──────────────────────────────────────────────────
 
@@ -483,7 +485,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(initialMode);
-  const [cardsLayout, setCardsLayout] = useState<'grid' | 'feed'>('grid'); // Layout dos cards: grade (grid) ou feed (lista 1 col)
+  const [cardsLayout, setCardsLayout] = useState<'grid' | 'feed'>('grid');
+
+  // Configuração da Ativação Periódica
+  const [periodicCount, setPeriodicCount] = useState<number>(5);
+  const [periodicHours, setPeriodicHours] = useState<number>(24);
+  const [showPeriodicSettings, setShowPeriodicSettings] = useState<boolean>(false);
 
   useEffect(() => {
     setViewMode(initialMode);
@@ -519,6 +526,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
         notes: item.notes || '',
         createdAt: item.created_at,
         user_id: item.user_id,
+        isPeriodicallyActive: item.is_periodically_active || false,
+        scheduledAt: item.scheduled_at,
       }));
 
       setTasks(formatted);
@@ -530,7 +539,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
     fetchSupabaseTasks();
 
     if (!user) return;
-    // Realtime Sync entre dispositivos (PC <-> Mobile)
     const channel = supabase
       .channel('realtime_user_tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_tasks', filter: `user_id=eq.${user.id}` }, () => {
@@ -546,6 +554,108 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
   useEffect(() => {
     saveLocalTasks(tasks);
   }, [tasks]);
+
+  // ⚡ ALGORITMO DE SELEÇÃO INTELIGENTE DA IA & DISTRIBUIÇÃO NA AGENDA
+  const triggerPeriodicActivation = async () => {
+    if (tasks.length === 0) return;
+
+    // 1. Filtrar tarefas elegíveis (não concluídas)
+    const pendingTasks = tasks.filter(t => t.status !== 'concluido');
+    const pool = pendingTasks.length > 0 ? pendingTasks : tasks;
+
+    // 2. Pontuar cada tarefa com base em Inércia, Prioridade (Classe A > B > C) e Tipo
+    const scored = pool.map(t => {
+      let score = 0;
+
+      // Pontuação por Classe/Prioridade
+      if (t.taskClass === 'A') score += 100;
+      else if (t.taskClass === 'B') score += 50;
+      else score += 10;
+
+      // Pontuação por Tipo (Manutenção e Infra têm alta relevância)
+      if (t.taskType === 'manutencao') score += 40;
+      if (t.taskType === 'infra') score += 30;
+
+      // Pontuação por Inércia (Tempo sem fazer)
+      if (t.lastCompletedAt) {
+        const hoursInactive = (Date.now() - new Date(t.lastCompletedAt).getTime()) / (1000 * 60 * 60);
+        score += Math.min(hoursInactive * 2, 200); // até +200 pontos para inércia longa
+      } else {
+        score += 80; // Nunca feita ganha impulso
+      }
+
+      return { task: t, score };
+    });
+
+    // 3. Ordenar por maior pontuação e pegar as X melhores
+    scored.sort((a, b) => b.score - a.score);
+    const selectedIds = new Set(scored.slice(0, periodicCount).map(s => s.task.id));
+
+    // 4. Distribuir horários na Agenda ao longo do período escolhido (ex: 48h / 10 tarefas = 1 a cada 4.8h)
+    const intervalMs = (periodicHours * 60 * 60 * 1000) / Math.max(selectedIds.size, 1);
+    let currentScheduleTime = Date.now();
+
+    const updated = tasks.map(t => {
+      if (selectedIds.has(t.id)) {
+        currentScheduleTime += intervalMs;
+        const scheduledIso = new Date(currentScheduleTime).toISOString();
+        
+        // Se a tarefa não tinha data agendada, cria entrada na Agenda do Supabase
+        if (user) {
+          supabase.from('scheduled_calls').insert({
+            user_id: user.id,
+            target_time: scheduledIso,
+            reason: `[Ativação Periódica] ${t.name}`,
+            status: 'scheduled'
+          }).then();
+        }
+
+        return {
+          ...t,
+          isPeriodicallyActive: true,
+          scheduledAt: scheduledIso,
+        };
+      }
+      return {
+        ...t,
+        isPeriodicallyActive: false,
+      };
+    });
+
+    setTasks(updated);
+    saveLocalTasks(updated);
+
+    // Persistir no Supabase
+    if (user) {
+      for (const t of updated) {
+        await supabase.from('user_tasks').upsert({
+          id: t.id,
+          user_id: user.id,
+          name: t.name,
+          category: t.category,
+          status: t.status,
+          task_class: t.taskClass,
+          task_type: t.taskType,
+          recurrence_mode: t.recurrenceMode,
+          recurrence_exact_time: t.recurrenceExactTime,
+          recurrence_exact_days: t.recurrenceExactDays,
+          recurrence_flex_hours: t.recurrenceFlexHours,
+          times_completed: t.timesCompleted,
+          estimated_minutes: t.estimatedMinutes,
+          last_completed_at: t.lastCompletedAt,
+          locality: t.locality,
+          subtasks: t.subtasks,
+          rewards: t.rewards,
+          notes: t.notes,
+          created_at: t.createdAt,
+          is_periodically_active: t.isPeriodicallyActive,
+          scheduled_at: t.scheduledAt,
+        });
+      }
+    }
+
+    alert(`⚡ Ativação concluída! ${selectedIds.size} tarefas foram selecionadas pela IA e distribuídas nas próximas ${periodicHours} horas.`);
+  };
 
   const upsert = async (task: Task) => {
     const isNew = !tasks.some(t => t.id === task.id);
@@ -573,7 +683,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
         subtasks: task.subtasks,
         rewards: task.rewards,
         notes: task.notes,
-        created_at: task.createdAt
+        created_at: task.createdAt,
+        is_periodically_active: task.isPeriodicallyActive,
+        scheduled_at: task.scheduledAt,
       });
     }
   };
@@ -606,12 +718,21 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
 
   const categories = [...new Set(tasks.map(t => t.category).filter(Boolean))];
 
+  // 🏆 ORDENAÇÃO E FILTRAGEM: Tarefas com Ativação Periódica aparecem no TOPO do feed por padrão!
   const filtered = tasks
-    .filter(t => filterStatus === 'all' || t.status === filterStatus)
+    .filter(t => {
+      if (filterStatus === 'periodic') return t.isPeriodicallyActive;
+      if (filterStatus === 'all') return true;
+      return t.status === filterStatus;
+    })
     .filter(t => !filterCategory || t.category === filterCategory)
     .filter(t => filterType === 'all' || t.taskType === filterType)
     .filter(t => !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
+      // Prioridade máxima para tarefas de Ativação Periódica ficarem no topo do Feed
+      if (a.isPeriodicallyActive && !b.isPeriodicallyActive) return -1;
+      if (!a.isPeriodicallyActive && b.isPeriodicallyActive) return 1;
+
       if (sortMode === 'class') return ['A', 'B', 'C'].indexOf(a.taskClass) - ['A', 'B', 'C'].indexOf(b.taskClass);
       if (sortMode === 'status') return a.status.localeCompare(b.status);
       if (sortMode === 'category') return (a.category || '').localeCompare(b.category || '');
@@ -619,6 +740,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
     });
 
   const total = tasks.length;
+  const periodicCountActive = tasks.filter(t => t.isPeriodicallyActive).length;
   const done = tasks.filter(t => t.status === 'concluido').length;
   const open = tasks.filter(t => t.status === 'em_aberto' || t.status === 'pendente').length;
   const failed = tasks.filter(t => t.status === 'falhou' || t.status === 'nao_concluido').length;
@@ -680,6 +802,13 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
             )}
 
             <button
+              onClick={() => setShowPeriodicSettings(prev => !prev)}
+              className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+            >
+              ⚡ Ativação Periódica ({periodicCountActive})
+            </button>
+
+            <button
               onClick={() => { setEditingTask(undefined); setShowForm(true); }}
               className="flex-1 sm:flex-initial px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95 text-center whitespace-nowrap"
             >
@@ -687,6 +816,55 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
             </button>
           </div>
         </div>
+
+        {/* Painel Configurador da Ativação Periódica */}
+        {showPeriodicSettings && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-3 animate-in fade-in duration-300">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                <span>⚡ Configuração de Ativação Periódica por IA</span>
+              </h3>
+              <span className="text-[9px] text-amber-300/60 uppercase font-bold">Automação de Produtividade</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Defina quantas tarefas você quer que a IA ative no seu feed e distribua automaticamente na sua agenda ao longo do tempo estipulado.
+            </p>
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-amber-200 uppercase">Ativar</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={periodicCount}
+                  onChange={e => setPeriodicCount(Math.max(1, Number(e.target.value)))}
+                  className="w-16 bg-black/40 border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-xs text-amber-200 font-bold text-center focus:outline-none"
+                />
+                <span className="text-[10px] font-bold text-amber-200 uppercase">tarefas</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-amber-200 uppercase">a cada</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={periodicHours}
+                  onChange={e => setPeriodicHours(Math.max(1, Number(e.target.value)))}
+                  className="w-20 bg-black/40 border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-xs text-amber-200 font-bold text-center focus:outline-none"
+                />
+                <span className="text-[10px] font-bold text-amber-200 uppercase">horas (Ex: 24h, 48h)</span>
+              </div>
+
+              <button
+                onClick={triggerPeriodicActivation}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black rounded-xl text-[10px] uppercase tracking-widest shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
+              >
+                🚀 Executar Ativação Inteligente
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Top Summary Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
@@ -718,6 +896,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
             className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold text-white/80 focus:outline-none transition-all truncate"
           >
             <option value="all" className="bg-[#1f2636]">Todos Status</option>
+            <option value="periodic" className="bg-[#1f2636] font-bold text-amber-300">⚡ Ativação Periódica</option>
             {(Object.entries(STATUS_META) as [TaskStatus, any][]).map(([k, v]) => (
               <option key={k} value={k} className="bg-[#1f2636]">{v.label}</option>
             ))}
@@ -926,9 +1105,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
               const cls = CLASS_META[t.taskClass];
 
               return (
-                <div key={t.id} className="bg-[#1d2332] border border-white/10 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl hover:border-blue-500/40 transition-all">
+                <div key={t.id} className={`bg-[#1d2332] border rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition-all ${t.isPeriodicallyActive ? 'border-amber-500/50 shadow-amber-500/10 bg-gradient-to-b from-amber-500/5 to-[#1d2332]' : 'border-white/10 hover:border-blue-500/40'}`}>
                   <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {t.isPeriodicallyActive && (
+                        <span className="px-2.5 py-1 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black tracking-wider animate-pulse flex items-center gap-1">
+                          ⚡ ATIVAÇÃO PERIÓDICA
+                        </span>
+                      )}
                       <span className={`px-2.5 py-1 rounded-md border text-[10px] font-black ${cls.bg} ${cls.color}`}>
                         {cls.label}
                       </span>
