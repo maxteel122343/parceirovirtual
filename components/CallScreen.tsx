@@ -865,6 +865,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               resolvedSessionRef.current = session;
             });
 
+            if (inputAudioContextRef.current?.state === 'suspended') {
+              inputAudioContextRef.current.resume();
+            }
             if (outputAudioContextRef.current?.state === 'suspended') {
               outputAudioContextRef.current.resume();
             }
@@ -915,10 +918,8 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
               }
 
               // Send 16kHz downsampled PCM audio to Gemini Live session continuously
-              if (isConnectedRef.current && resolvedSessionRef.current) {
-                const sampleRate = inputAudioContextRef.current.sampleRate;
-                const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
-                const pcmBlob = createBlob(downsampled);
+              if (isConnectedRef.current && resolvedSessionRef.current && inputAudioContextRef.current) {
+                const pcmBlob = createBlob(inputData);
                 resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };

@@ -830,6 +830,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                     {[
                         { id: 'dashboard', label: 'Início', icon: '🏠' },
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
+                        { id: 'tasks', label: 'Tarefas', icon: '📋' },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
                         { id: 'calendar', label: 'Agenda', icon: '📅' }
                     ].map(tab => (
@@ -960,6 +961,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                     <span>📍</span>
                                                 </button>
 
+                                                {/* Tarefas */}
+                                                <button
+                                                    onClick={() => setActiveTab('tasks')}
+                                                    className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                    title="Tarefas"
+                                                >
+                                                    <span>📋</span>
+                                                </button>
+
                                                 {/* Convites */}
                                                 <button
                                                     onClick={() => setActiveTab('invites')}
@@ -974,16 +984,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                     )}
                                                 </button>
 
-                                                 {/* Planilha de Tarefas */}
-                                                 <button
-                                                     onClick={() => setActiveTab('tasks')}
-                                                     className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
-                                                     title="Planilha de Tarefas"
-                                                 >
-                                                     <span>📊</span>
-                                                 </button>
-
-                                                 {/* Memória */}
+                                                {/* Memória */}
                                                 <button
                                                     onClick={() => setActiveTab('memory')}
                                                     className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
@@ -1193,6 +1194,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
                         {activeTab === 'calendar' && user && (
                             <div className="w-full max-w-2xl mx-auto"><CalendarTab user={user} profile={profile} setProfile={setProfile} currentUserProfile={currentUserProfile} isDark={isDark} /></div>
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <div className="w-full max-w-7xl mx-auto">
+                                <TasksTab user={user} profile={profile} isDark={isDark} />
+                            </div>
                         )}
 
                         {activeTab === 'memory' && user && (
@@ -1444,15 +1451,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                         <span className="text-lg">📞</span>
                                                         <span className="text-[10px] font-black uppercase tracking-widest">{ai.callCount || 0} Chamadas Efetuadas</span>
                                                     </div>
-
-                                                    {/* Planilha de Tarefas */}
-                                                    <button
-                                                        onClick={() => setActiveTab('tasks')}
-                                                        className={`p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm flex items-center gap-1 ${activeTab === 'tasks' ? 'bg-[#161b22] text-blue-500 font-bold shadow' : ''}`}
-                                                        title="Planilha de Tarefas"
-                                                    >
-                                                        <span>📊</span>
-                                                    </button>
 
                                                     {/* Action Buttons */}
                                                     <div className="flex gap-3">
@@ -2203,10 +2201,6 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
                         {activeTab === 'chats' && (
                             <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-280px)]"><QuickChatTab currentUser={user} profile={profile} onCallPartner={onCallPartner} onOpenChat={(target, isAi) => setActiveChat({ profile: target, isAi })} isDark={isDark} /></div>
-                        )}
-
-                        {activeTab === 'tasks' && (
-                            <div className="w-full min-h-[calc(100vh-200px)]"><TasksTab /></div>
                         )}
                     </div>
                 </div>
