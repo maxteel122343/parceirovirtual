@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,42 +45,41 @@ interface Task {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string; icon: string }> = {
-  em_aberto:      { label: 'Em Aberto',            color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/20',   icon: '🔵' },
-  pendente:       { label: 'Pendente',              color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', icon: '⏳' },
-  concluido:      { label: 'Concluído',             color: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/20',  icon: '✅' },
-  concluido_fora: { label: 'Concluído Fora do Prazo', color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', icon: '⚠️' },
-  adiado:         { label: 'Adiado',                color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20', icon: '⏭️' },
-  nao_concluido:  { label: 'Não Concluído',         color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20',    icon: '❌' },
-  falhou:         { label: 'Falhou',                color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/20', icon: '💀' },
+  em_aberto:      { label: 'Em Aberto',            color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300',   icon: '🔵' },
+  pendente:       { label: 'Pendente',              color: 'text-amber-400',  bg: 'bg-amber-500/15 border-amber-500/30 text-amber-300', icon: '⏳' },
+  concluido:      { label: 'Concluído',             color: 'text-emerald-400',bg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300', icon: '✅' },
+  concluido_fora: { label: 'Fora do Prazo',          color: 'text-orange-400', bg: 'bg-orange-500/15 border-orange-500/30 text-orange-300', icon: '⚠️' },
+  adiado:         { label: 'Adiado',                color: 'text-purple-400', bg: 'bg-purple-500/15 border-purple-500/30 text-purple-300', icon: '⏭️' },
+  nao_concluido:  { label: 'Não Concluído',         color: 'text-rose-400',   bg: 'bg-rose-500/15 border-rose-500/30 text-rose-300',   icon: '❌' },
+  falhou:         { label: 'Falhou',                color: 'text-slate-400',  bg: 'bg-slate-500/15 border-slate-500/30 text-slate-300', icon: '💀' },
 };
 
-const TYPE_META: Record<TaskType, { label: string; icon: string; color: string }> = {
-  manutencao:  { label: 'Manutenção',  icon: '🔧', color: 'text-amber-400' },
-  normal:      { label: 'Normal',      icon: '📝', color: 'text-blue-400' },
-  organizacao: { label: 'Organização', icon: '📦', color: 'text-teal-400' },
-  infra:       { label: 'Infra',       icon: '🏗️', color: 'text-indigo-400' },
-  intervalo:   { label: 'Intervalo',   icon: '🎮', color: 'text-pink-400' },
+const TYPE_META: Record<TaskType, { label: string; icon: string; color: string; bg: string }> = {
+  manutencao:  { label: 'Manutenção',  icon: '🔧', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/20' },
+  normal:      { label: 'Normal',      icon: '📝', color: 'text-blue-300', bg: 'bg-blue-500/10 border-blue-500/20' },
+  organizacao: { label: 'Organização', icon: '📦', color: 'text-teal-300', bg: 'bg-teal-500/10 border-teal-500/20' },
+  infra:       { label: 'Infra',       icon: '🏗️', color: 'text-indigo-300', bg: 'bg-indigo-500/10 border-indigo-500/20' },
+  intervalo:   { label: 'Intervalo',   icon: '🎮', color: 'text-pink-300', bg: 'bg-pink-500/10 border-pink-500/20' },
 };
 
 const CLASS_META: Record<TaskClass, { label: string; color: string; bg: string }> = {
-  A: { label: 'Classe A', color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20' },
-  B: { label: 'Classe B', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' },
-  C: { label: 'Classe C', color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/20' },
+  A: { label: 'Classe A', color: 'text-emerald-300', bg: 'bg-emerald-500/15 border-emerald-500/30' },
+  B: { label: 'Classe B', color: 'text-amber-300',   bg: 'bg-amber-500/15 border-amber-500/30' },
+  C: { label: 'Classe C', color: 'text-slate-300',   bg: 'bg-slate-500/15 border-slate-500/30' },
 };
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 const genId = () => Math.random().toString(36).slice(2, 10);
 
 const elapsedSince = (isoDate?: string): string => {
-  if (!isoDate) return '—';
+  if (!isoDate) return '--';
   const diff = Date.now() - new Date(isoDate).getTime();
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  return `${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m sem fazer`;
 };
 
 const blankTask = (): Omit<Task, 'id' | 'createdAt'> => ({
@@ -94,7 +93,7 @@ const blankTask = (): Omit<Task, 'id' | 'createdAt'> => ({
   recurrenceExactDays: [],
   recurrenceFlexHours: 24,
   timesCompleted: 0,
-  estimatedMinutes: 30,
+  estimatedMinutes: 15,
   lastCompletedAt: undefined,
   locality: '',
   subtasks: [],
@@ -102,19 +101,9 @@ const blankTask = (): Omit<Task, 'id' | 'createdAt'> => ({
   notes: '',
 });
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-const Badge: React.FC<{ className?: string; children: React.ReactNode }> = ({ className = '', children }) => (
-  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${className}`}>
-    {children}
-  </span>
-);
-
 const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 mb-1.5">{children}</p>
 );
-
-// ─── Inertia Clock ────────────────────────────────────────────────────────────
 
 const InertiaClock: React.FC<{ lastCompletedAt?: string }> = ({ lastCompletedAt }) => {
   const [elapsed, setElapsed] = useState(elapsedSince(lastCompletedAt));
@@ -165,29 +154,30 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
     onClose();
   };
 
-  const sectionBtnCls = (s: typeof activeSection) =>
-    `px-4 py-2 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all ${
-      activeSection === s ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'opacity-40 hover:opacity-70'
-    }`;
-
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="w-full max-w-2xl bg-[#12131a] border border-white/8 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="w-full max-w-2xl bg-[#131722] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-8 pt-8 pb-5 border-b border-white/5">
+        <div className="px-8 pt-8 pb-5 border-b border-white/10 bg-slate-900/50">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-xl font-black tracking-tighter text-white">
-                {initial ? '✏️ Editar Tarefa' : '➕ Nova Tarefa'}
+                {initial ? '✏️ Editar Tarefa na Planilha' : '➕ Nova Tarefa para Planilha'}
               </h2>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mt-1">Sistema de Gestão de Tarefas</p>
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mt-1">Planilha Geral de Tarefas</p>
             </div>
             <button onClick={onClose} className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all">✕</button>
           </div>
           <div className="flex gap-2 flex-wrap">
             {(['main', 'time', 'context', 'metrics'] as const).map(s => (
-              <button key={s} onClick={() => setActiveSection(s)} className={sectionBtnCls(s)}>
-                {s === 'main' ? '📋 Principal' : s === 'time' ? '⏱️ Tempo' : s === 'context' ? '📍 Contexto' : '📊 Métricas'}
+              <button
+                key={s}
+                onClick={() => setActiveSection(s)}
+                className={`px-4 py-2 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                  activeSection === s ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'opacity-40 hover:opacity-70 text-white'
+                }`}
+              >
+                {s === 'main' ? '📋 Dados Principais' : s === 'time' ? '⏱️ Frequência & Tempo' : s === 'context' ? '📍 Contexto & Subtarefas' : '📊 Métricas & Ganho'}
               </button>
             ))}
           </div>
@@ -195,29 +185,26 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-
           {activeSection === 'main' && (
             <>
-              {/* Name */}
               <div>
                 <FieldLabel>Nome da Tarefa *</FieldLabel>
                 <input
                   value={form.name}
                   onChange={e => set('name', e.target.value)}
-                  placeholder="Ex: Limpar a pia"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                  placeholder="Ex: Treino de Musculação, Limpar Pia Banheiro..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                 />
               </div>
 
-              {/* Category + Locality */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Categoria</FieldLabel>
                   <input
                     value={form.category}
                     onChange={e => set('category', e.target.value)}
-                    placeholder="Ex: Saúde, Casa, Trabalho"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                    placeholder="Ex: Saúde/Fitness, Casa, Trabalho"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                   />
                 </div>
                 <div>
@@ -225,22 +212,21 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                   <input
                     value={form.locality}
                     onChange={e => set('locality', e.target.value)}
-                    placeholder="Ex: Banheiro, PC, Cozinha"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                    placeholder="Ex: Academia, Banheiro, Cozinha"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                   />
                 </div>
               </div>
 
-              {/* Status */}
               <div>
-                <FieldLabel>Status</FieldLabel>
-                <div className="grid grid-cols-2 gap-2">
+                <FieldLabel>Status Atual</FieldLabel>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(Object.entries(STATUS_META) as [TaskStatus, typeof STATUS_META[TaskStatus]][]).map(([key, meta]) => (
                     <button
                       key={key}
                       onClick={() => set('status', key)}
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                        form.status === key ? `${meta.bg} ${meta.color} font-black border-current` : 'bg-white/3 border-white/5 opacity-40 hover:opacity-70'
+                        form.status === key ? `${meta.bg} font-black border-current shadow-md` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-80 text-white'
                       }`}
                     >
                       <span>{meta.icon}</span>
@@ -250,7 +236,6 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                 </div>
               </div>
 
-              {/* Priority Class */}
               <div>
                 <FieldLabel>Classe / Prioridade</FieldLabel>
                 <div className="flex gap-3">
@@ -259,7 +244,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                       key={c}
                       onClick={() => set('taskClass', c)}
                       className={`flex-1 py-3 rounded-xl border text-[11px] font-black uppercase transition-all ${
-                        form.taskClass === c ? `${CLASS_META[c].bg} ${CLASS_META[c].color}` : 'bg-white/3 border-white/5 opacity-40 hover:opacity-70 text-white'
+                        form.taskClass === c ? `${CLASS_META[c].bg} ${CLASS_META[c].color} border-current` : 'bg-white/5 border-white/5 opacity-40 hover:opacity-70 text-white'
                       }`}
                     >
                       {CLASS_META[c].label}
@@ -268,7 +253,6 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                 </div>
               </div>
 
-              {/* Task Type */}
               <div>
                 <FieldLabel>Tipo de Tarefa</FieldLabel>
                 <div className="flex flex-wrap gap-2">
@@ -277,7 +261,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                       key={key}
                       onClick={() => set('taskType', key)}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-black uppercase transition-all ${
-                        form.taskType === key ? `bg-indigo-600/20 border-indigo-500/40 text-indigo-300` : 'bg-white/3 border-white/5 text-white/40 hover:text-white/70'
+                        form.taskType === key ? `bg-blue-600/30 border-blue-500/50 text-blue-200` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
                       }`}
                     >
                       <span>{meta.icon}</span>{meta.label}
@@ -290,7 +274,6 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
 
           {activeSection === 'time' && (
             <>
-              {/* Recurrence Mode */}
               <div>
                 <FieldLabel>Modo de Recorrência</FieldLabel>
                 <div className="flex gap-3">
@@ -299,7 +282,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                       key={m}
                       onClick={() => set('recurrenceMode', m)}
                       className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${
-                        form.recurrenceMode === m ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300' : 'bg-white/3 border-white/5 text-white/40 hover:text-white/70'
+                        form.recurrenceMode === m ? 'bg-blue-600/30 border-blue-500/50 text-blue-200' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/80'
                       }`}
                     >
                       {label}
@@ -308,20 +291,19 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                 </div>
               </div>
 
-              {/* Exata */}
               {form.recurrenceMode === 'exata' && (
                 <div className="space-y-4">
                   <div>
-                    <FieldLabel>Horário Fixo</FieldLabel>
+                    <FieldLabel>Horário Exato</FieldLabel>
                     <input
                       type="time"
                       value={form.recurrenceExactTime || ''}
                       onChange={e => set('recurrenceExactTime', e.target.value)}
-                      className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                      className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
                     />
                   </div>
                   <div>
-                    <FieldLabel>Dias da Semana</FieldLabel>
+                    <FieldLabel>Dias Fixos</FieldLabel>
                     <div className="flex gap-2 flex-wrap">
                       {WEEKDAYS.map((d, i) => {
                         const key = String(i);
@@ -334,7 +316,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                               set('recurrenceExactDays', active ? current.filter(x => x !== key) : [...current, key]);
                             }}
                             className={`w-10 h-10 rounded-xl text-[10px] font-black border transition-all ${
-                              active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-white/40'
+                              active ? 'bg-blue-600 border-blue-500 text-white' : 'bg-white/5 border-white/10 text-white/40'
                             }`}
                           >{d}</button>
                         );
@@ -344,25 +326,22 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                 </div>
               )}
 
-              {/* Flexivel */}
               {form.recurrenceMode === 'flexivel' && (
                 <div>
-                  <FieldLabel>A cada quantas horas?</FieldLabel>
+                  <FieldLabel>Intervalo de Recorrência (Horas)</FieldLabel>
                   <div className="flex items-center gap-4">
                     <input
                       type="number"
                       min={1}
                       value={form.recurrenceFlexHours || 24}
                       onChange={e => set('recurrenceFlexHours', Number(e.target.value))}
-                      className="w-28 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                      className="w-28 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
                     />
-                    <span className="text-white/40 text-sm">horas</span>
+                    <span className="text-white/50 text-sm">horas (Ex: A cada 24h)</span>
                   </div>
-                  <p className="text-[10px] text-white/30 mt-2">Alerta dispara quando o tempo desde a última execução atingir esse limite.</p>
                 </div>
               )}
 
-              {/* Estimated time */}
               <div>
                 <FieldLabel>Duração Estimada (minutos)</FieldLabel>
                 <input
@@ -370,7 +349,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                   min={1}
                   value={form.estimatedMinutes}
                   onChange={e => set('estimatedMinutes', Number(e.target.value))}
-                  className="w-36 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
+                  className="w-36 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/60 transition-all"
                 />
               </div>
             </>
@@ -378,17 +357,16 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
 
           {activeSection === 'context' && (
             <>
-              {/* Subtasks */}
               <div>
-                <FieldLabel>Subtasks ({form.subtasks.length}/5)</FieldLabel>
+                <FieldLabel>Subtarefas / Passos ({form.subtasks.length}/5)</FieldLabel>
                 <div className="space-y-2 mb-3">
                   {form.subtasks.map(s => (
-                    <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-white/8 rounded-xl">
-                      <button onClick={() => toggleSubtask(s.id)} className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${s.done ? 'bg-green-500 border-green-400' : 'bg-white/10 border-white/20'}`}>
-                        {s.done && <span className="text-[10px] text-white">✓</span>}
+                    <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl">
+                      <button onClick={() => toggleSubtask(s.id)} className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${s.done ? 'bg-emerald-500 border-emerald-400' : 'bg-white/10 border-white/20'}`}>
+                        {s.done && <span className="text-[10px] text-white font-black">✓</span>}
                       </button>
-                      <span className={`flex-1 text-sm ${s.done ? 'line-through opacity-30' : 'text-white/80'}`}>{s.title}</span>
-                      <button onClick={() => removeSubtask(s.id)} className="text-white/20 hover:text-red-400 transition-all text-xs">✕</button>
+                      <span className={`flex-1 text-sm ${s.done ? 'line-through opacity-40' : 'text-white/90'}`}>{s.title}</span>
+                      <button onClick={() => removeSubtask(s.id)} className="text-white/30 hover:text-rose-400 transition-all text-xs">✕</button>
                     </div>
                   ))}
                 </div>
@@ -398,34 +376,32 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
                       value={subtaskInput}
                       onChange={e => setSubtaskInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addSubtask()}
-                      placeholder="Adicionar subpasso..."
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                      placeholder="Adicionar subpasso (Ex: Supino, Agachamento, Jogar Lixo...)"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                     />
-                    <button onClick={addSubtask} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-black transition-all">+</button>
+                    <button onClick={addSubtask} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-black transition-all">+</button>
                   </div>
                 )}
               </div>
 
-              {/* Rewards */}
               <div>
                 <FieldLabel>Propriedades Ganhas / Recompensas</FieldLabel>
                 <input
                   value={form.rewards}
                   onChange={e => set('rewards', e.target.value)}
-                  placeholder="Ex: Força +1, Alimento em estoque, Produtividade +2..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+                  placeholder="Ex: +Força Muscular, +Alimento Armazenado, Item Limpeza..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all"
                 />
               </div>
 
-              {/* Notes */}
               <div>
-                <FieldLabel>Notas e Observações</FieldLabel>
+                <FieldLabel>Notas / Observações</FieldLabel>
                 <textarea
                   value={form.notes}
                   onChange={e => set('notes', e.target.value)}
                   rows={4}
-                  placeholder="Anotações livres sobre esta tarefa..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all resize-none"
+                  placeholder="Foco no Supino, Usar desinfetante..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/60 transition-all resize-none"
                 />
               </div>
             </>
@@ -434,50 +410,37 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
           {activeSection === 'metrics' && (
             <>
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white/5 border border-white/8 rounded-2xl p-4 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Vezes Concluída</p>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Quantidade Feita</p>
                   <p className="text-3xl font-black text-white">{form.timesCompleted}</p>
                 </div>
-                <div className="bg-white/5 border border-white/8 rounded-2xl p-4 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Duração Estimada</p>
-                  <p className="text-3xl font-black text-white">{form.estimatedMinutes}<span className="text-sm text-white/30">min</span></p>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Duração Est.</p>
+                  <p className="text-3xl font-black text-white">{form.estimatedMinutes}<span className="text-sm text-white/40">m</span></p>
                 </div>
               </div>
 
-              {/* Inertia */}
-              <div className="bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-orange-400 mb-2">⏱️ Cronômetro de Inércia</p>
-                <p className="text-2xl font-black text-orange-300">
+              <div className="bg-gradient-to-br from-amber-500/15 to-orange-500/15 border border-amber-500/30 rounded-2xl p-5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-2">⏱️ Inércia Atual (Tempo Sem Fazer)</p>
+                <p className="text-2xl font-black text-amber-300">
                   <InertiaClock lastCompletedAt={form.lastCompletedAt} />
                 </p>
-                <p className="text-[10px] text-orange-300/40 mt-1">Tempo desde a última execução</p>
-              </div>
-
-              {/* Last completed */}
-              <div>
-                <FieldLabel>Última Conclusão (manual)</FieldLabel>
-                <input
-                  type="datetime-local"
-                  value={form.lastCompletedAt ? new Date(form.lastCompletedAt).toISOString().slice(0, 16) : ''}
-                  onChange={e => set('lastCompletedAt', e.target.value ? new Date(e.target.value).toISOString() : undefined)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/60 transition-all"
-                />
               </div>
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-6 border-t border-white/5 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3.5 rounded-2xl border border-white/10 text-white/40 hover:text-white hover:border-white/20 text-[10px] font-black uppercase tracking-widest transition-all">
+        <div className="px-8 py-6 border-t border-white/10 flex gap-3 bg-slate-900/50">
+          <button onClick={onClose} className="flex-1 py-3.5 rounded-2xl border border-white/10 text-white/50 hover:text-white hover:border-white/20 text-[10px] font-black uppercase tracking-widest transition-all">
             Cancelar
           </button>
           <button
             onClick={save}
             disabled={!form.name.trim()}
-            className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/30 transition-all"
+            className="flex-1 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/30 transition-all"
           >
-            {initial ? 'Salvar Alterações' : 'Criar Tarefa'} ✨
+            {initial ? 'Atualizar Tarefa' : 'Salvar na Planilha'} ✨
           </button>
         </div>
       </div>
@@ -485,128 +448,7 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, onSave, onClose }) =>
   );
 };
 
-// ─── Task Card ────────────────────────────────────────────────────────────────
-
-interface TaskCardProps {
-  task: Task;
-  onEdit: (t: Task) => void;
-  onDelete: (id: string) => void;
-  onComplete: (id: string) => void;
-}
-
-const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit, onDelete, onComplete }) => {
-  const [expanded, setExpanded] = useState(false);
-  const status = STATUS_META[task.status];
-  const type = TYPE_META[task.taskType];
-  const cls = CLASS_META[task.taskClass];
-
-  return (
-    <div className={`bg-[#12131a] border rounded-2xl overflow-hidden transition-all duration-300 hover:border-indigo-500/30 ${task.status === 'concluido' ? 'border-white/5 opacity-60' : 'border-white/8'}`}>
-      {/* Main row */}
-      <div className="px-5 py-4 flex items-start gap-4">
-        {/* Checkbox */}
-        <button
-          onClick={() => onComplete(task.id)}
-          className={`mt-0.5 w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-            task.status === 'concluido' ? 'bg-green-500 border-green-400' : 'bg-white/5 border-white/20 hover:border-indigo-400'
-          }`}
-        >
-          {task.status === 'concluido' && <span className="text-[10px] text-white font-black">✓</span>}
-        </button>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start gap-2 flex-wrap mb-2">
-            <span className={`text-sm font-bold ${task.status === 'concluido' ? 'line-through text-white/30' : 'text-white'}`}>
-              {task.name}
-            </span>
-            <Badge className={cls.bg + ' ' + cls.color}>{task.taskClass}</Badge>
-            <Badge className={status.bg + ' ' + status.color}>{status.icon} {status.label}</Badge>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className={`text-[10px] font-bold ${type.color}`}>{type.icon} {type.label}</span>
-            {task.category && <span className="text-[10px] text-white/30 font-medium"># {task.category}</span>}
-            {task.locality && <span className="text-[10px] text-white/30 font-medium">📍 {task.locality}</span>}
-            {task.recurrenceMode !== 'unica' && (
-              <span className="text-[10px] text-indigo-400/70 font-bold">
-                {task.recurrenceMode === 'exata' ? `📅 ${task.recurrenceExactTime || ''}` : `🔄 ${task.recurrenceFlexHours}h`}
-              </span>
-            )}
-          </div>
-
-          {/* Subtask progress */}
-          {task.subtasks.length > 0 && (
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-indigo-500 rounded-full transition-all"
-                  style={{ width: `${(task.subtasks.filter(s => s.done).length / task.subtasks.length) * 100}%` }}
-                />
-              </div>
-              <span className="text-[9px] text-white/30 font-bold">
-                {task.subtasks.filter(s => s.done).length}/{task.subtasks.length}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={() => setExpanded(e => !e)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-all text-xs">
-            {expanded ? '▲' : '▼'}
-          </button>
-          <button onClick={() => onEdit(task)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-indigo-400 hover:bg-white/10 transition-all text-xs">✏️</button>
-          <button onClick={() => onDelete(task.id)} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs">🗑️</button>
-        </div>
-      </div>
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="px-5 pb-5 pt-1 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Inércia</p>
-            <p className="text-sm font-bold text-orange-400"><InertiaClock lastCompletedAt={task.lastCompletedAt} /></p>
-          </div>
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Concluída</p>
-            <p className="text-sm font-bold text-white">{task.timesCompleted}×</p>
-          </div>
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Duração Estimada</p>
-            <p className="text-sm font-bold text-white">{task.estimatedMinutes} min</p>
-          </div>
-          {task.rewards && (
-            <div className="col-span-2 md:col-span-1">
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Recompensas</p>
-              <p className="text-[11px] text-yellow-400 font-bold">🏆 {task.rewards}</p>
-            </div>
-          )}
-          {task.notes && (
-            <div className="col-span-2 md:col-span-4">
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-1">Notas</p>
-              <p className="text-[11px] text-white/50 leading-relaxed">{task.notes}</p>
-            </div>
-          )}
-          {task.subtasks.length > 0 && (
-            <div className="col-span-2 md:col-span-4">
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-2">Subtasks</p>
-              <div className="space-y-1.5">
-                {task.subtasks.map(s => (
-                  <div key={s.id} className="flex items-center gap-2">
-                    <span className={`text-[10px] ${s.done ? 'text-green-400' : 'text-white/30'}`}>{s.done ? '✅' : '⬜'}</span>
-                    <span className={`text-[11px] ${s.done ? 'line-through text-white/30' : 'text-white/60'}`}>{s.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─── Main TasksTab ─────────────────────────────────────────────────────────────
+// ─── Storage ──────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'tasks_v1';
 
@@ -622,6 +464,8 @@ const saveTasks = (tasks: Task[]) => {
 type FilterStatus = 'all' | TaskStatus;
 type SortMode = 'created' | 'class' | 'status' | 'category';
 
+// ─── Main TasksTab Component ──────────────────────────────────────────────────
+
 export const TasksTab: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>(loadTasks);
   const [showForm, setShowForm] = useState(false);
@@ -631,6 +475,7 @@ export const TasksTab: React.FC = () => {
   const [filterType, setFilterType] = useState<TaskType | 'all'>('all');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   useEffect(() => { saveTasks(tasks); }, [tasks]);
 
@@ -667,122 +512,341 @@ export const TasksTab: React.FC = () => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-  // Summary stats
   const total = tasks.length;
   const done = tasks.filter(t => t.status === 'concluido').length;
-  const open = tasks.filter(t => t.status === 'em_aberto').length;
+  const open = tasks.filter(t => t.status === 'em_aberto' || t.status === 'pendente').length;
   const failed = tasks.filter(t => t.status === 'falhou' || t.status === 'nao_concluido').length;
 
   return (
-    <div className="flex flex-col h-full bg-[#0b0c10] text-white">
-      {/* Top bar */}
-      <div className="px-6 pt-6 pb-4 border-b border-white/5">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-2xl font-black tracking-tighter">📋 Tarefas</h1>
-            <p className="text-[9px] font-black uppercase tracking-widest opacity-30">Gestão de Produtividade</p>
+    <div className="flex flex-col h-full bg-[#181d29] text-white font-sans overflow-hidden border border-white/10 rounded-[2rem] shadow-2xl">
+      {/* Header Bar / Controls */}
+      <div className="px-6 pt-6 pb-4 bg-[#1f2636] border-b border-white/10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl shadow-lg">📋</div>
+            <div>
+              <h1 className="text-xl font-black tracking-tighter uppercase">PLANILHA GERAL DE TAREFAS</h1>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">Visão Geral Completa de Produtividade</p>
+            </div>
           </div>
-          <button
-            onClick={() => { setEditingTask(undefined); setShowForm(true); }}
-            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 active:scale-95"
-          >
-            + Nova Tarefa
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Toggle View */}
+            <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+              >
+                📊 Tabela
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'cards' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+              >
+                🎴 Cards
+              </button>
+            </div>
+
+            <button
+              onClick={() => { setEditingTask(undefined); setShowForm(true); }}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95"
+            >
+              + Nova Tarefa
+            </button>
+          </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-5">
+        {/* Top Summary Stats */}
+        <div className="grid grid-cols-4 gap-3 mb-4">
           {[
             { label: 'Total', val: total, color: 'text-white' },
             { label: 'Em Aberto', val: open, color: 'text-blue-400' },
-            { label: 'Concluídas', val: done, color: 'text-green-400' },
-            { label: 'Falhas', val: failed, color: 'text-red-400' },
+            { label: 'Concluídas', val: done, color: 'text-emerald-400' },
+            { label: 'Falhas', val: failed, color: 'text-rose-400' },
           ].map(s => (
-            <div key={s.label} className="bg-white/5 border border-white/8 rounded-xl p-3 text-center">
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
               <p className={`text-xl font-black ${s.color}`}>{s.val}</p>
-              <p className="text-[8px] font-black uppercase tracking-widest opacity-30 mt-0.5">{s.label}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest opacity-40 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Search + Filters */}
-        <div className="space-y-3">
+        {/* Filter bar */}
+        <div className="flex gap-2 flex-wrap items-center">
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Buscar tarefa..."
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/60 transition-all"
+            placeholder="🔍 Buscar por nome ou categoria..."
+            className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500/60 transition-all"
           />
-          <div className="flex gap-2 flex-wrap">
-            {/* Status filter */}
-            <select
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as FilterStatus)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
-            >
-              <option value="all">Todos Status</option>
-              {(Object.entries(STATUS_META) as [TaskStatus, any][]).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </select>
 
-            {/* Category filter */}
-            {categories.length > 0 && (
-              <select
-                value={filterCategory}
-                onChange={e => setFilterCategory(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
-              >
-                <option value="">Todas Categorias</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value as FilterStatus)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
+          >
+            <option value="all" className="bg-[#1f2636]">Todos Status</option>
+            {(Object.entries(STATUS_META) as [TaskStatus, any][]).map(([k, v]) => (
+              <option key={k} value={k} className="bg-[#1f2636]">{v.label}</option>
+            ))}
+          </select>
 
-            {/* Type filter */}
+          {categories.length > 0 && (
             <select
-              value={filterType}
-              onChange={e => setFilterType(e.target.value as TaskType | 'all')}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all"
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
             >
-              <option value="all">Todos Tipos</option>
-              {(Object.entries(TYPE_META) as [TaskType, any][]).map(([k, v]) => (
-                <option key={k} value={k}>{v.icon} {v.label}</option>
-              ))}
+              <option value="" className="bg-[#1f2636]">Todas Categorias</option>
+              {categories.map(c => <option key={c} value={c} className="bg-[#1f2636]">{c}</option>)}
             </select>
+          )}
 
-            {/* Sort */}
-            <select
-              value={sortMode}
-              onChange={e => setSortMode(e.target.value as SortMode)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black text-white/60 focus:outline-none focus:border-indigo-500/60 transition-all ml-auto"
-            >
-              <option value="created">↕ Mais Recente</option>
-              <option value="class">↕ Classe A→C</option>
-              <option value="status">↕ Status</option>
-              <option value="category">↕ Categoria</option>
-            </select>
-          </div>
+          <select
+            value={filterType}
+            onChange={e => setFilterType(e.target.value as TaskType | 'all')}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
+          >
+            <option value="all" className="bg-[#1f2636]">Todos Tipos</option>
+            {(Object.entries(TYPE_META) as [TaskType, any][]).map(([k, v]) => (
+              <option key={k} value={k} className="bg-[#1f2636]">{v.icon} {v.label}</option>
+            ))}
+          </select>
+
+          <select
+            value={sortMode}
+            onChange={e => setSortMode(e.target.value as SortMode)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all ml-auto"
+          >
+            <option value="created" className="bg-[#1f2636]">↕ Mais Recente</option>
+            <option value="class" className="bg-[#1f2636]">↕ Classe A→C</option>
+            <option value="status" className="bg-[#1f2636]">↕ Status</option>
+            <option value="category" className="bg-[#1f2636]">↕ Categoria</option>
+          </select>
         </div>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-64 opacity-20">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto bg-[#181d29] p-4">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 opacity-30">
             <span className="text-6xl mb-4">📋</span>
             <p className="text-sm font-black uppercase tracking-widest">Nenhuma tarefa encontrada</p>
-            <p className="text-[10px] mt-1">Clique em "+ Nova Tarefa" para começar</p>
+            <p className="text-[10px] mt-1">Clique em "+ Nova Tarefa" ou peça à IA durante a chamada para adicionar!</p>
+          </div>
+        ) : viewMode === 'table' ? (
+          /* 📊 PLANILHA GERAL DE TAREFAS (DATAGRID TABLE) */
+          <div className="w-full overflow-x-auto border border-white/10 rounded-xl shadow-2xl bg-[#1d2332]">
+            <table className="w-full text-left border-collapse text-xs whitespace-nowrap min-w-[1200px]">
+              <thead>
+                <tr className="bg-[#262e42] border-b border-white/10 text-[9px] font-black uppercase tracking-wider text-slate-300 select-none">
+                  <th className="p-3 text-center w-12 border-r border-white/5">#</th>
+                  <th className="p-3 border-r border-white/5">Nome da Tarefa</th>
+                  <th className="p-3 border-r border-white/5">Categoria</th>
+                  <th className="p-3 border-r border-white/5">Tipo</th>
+                  <th className="p-3 border-r border-white/5">Classe</th>
+                  <th className="p-3 border-r border-white/5">Localidade</th>
+                  <th className="p-3 border-r border-white/5">Recorrência</th>
+                  <th className="p-3 border-r border-white/5 text-center">Status</th>
+                  <th className="p-3 border-r border-white/5 text-center">Duração Est.</th>
+                  <th className="p-3 border-r border-white/5 text-center">Quant. Feita</th>
+                  <th className="p-3 border-r border-white/5">Subtarefas (Progresso)</th>
+                  <th className="p-3 border-r border-white/5">Propriedades Ganhas</th>
+                  <th className="p-3 border-r border-white/5">Inércia Atual</th>
+                  <th className="p-3 border-r border-white/5">Notas</th>
+                  <th className="p-3 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 font-medium">
+                {filtered.map((t, idx) => {
+                  const status = STATUS_META[t.status];
+                  const type = TYPE_META[t.taskType];
+                  const cls = CLASS_META[t.taskClass];
+                  const doneSubtasks = t.subtasks.filter(s => s.done).length;
+
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`hover:bg-white/5 transition-colors ${t.status === 'concluido' ? 'opacity-60 bg-emerald-950/10' : ''}`}
+                    >
+                      {/* ID / Checkbox */}
+                      <td className="p-3 text-center border-r border-white/5 font-mono text-[10px] opacity-40">
+                        {idx + 1}
+                      </td>
+
+                      {/* Name */}
+                      <td className="p-3 border-r border-white/5 font-bold text-white max-w-[200px] truncate">
+                        <span className={t.status === 'concluido' ? 'line-through text-white/40' : ''}>{t.name}</span>
+                      </td>
+
+                      {/* Categoria */}
+                      <td className="p-3 border-r border-white/5">
+                        {t.category ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 text-[10px] font-bold">
+                            📦 {t.category}
+                          </span>
+                        ) : <span className="opacity-20">--</span>}
+                      </td>
+
+                      {/* Tipo */}
+                      <td className="p-3 border-r border-white/5">
+                        <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${type.bg} ${type.color}`}>
+                          {type.icon} {type.label}
+                        </span>
+                      </td>
+
+                      {/* Classe */}
+                      <td className="p-3 border-r border-white/5">
+                        <span className={`px-2 py-0.5 rounded-md border text-[10px] font-black ${cls.bg} ${cls.color}`}>
+                          {cls.label}
+                        </span>
+                      </td>
+
+                      {/* Localidade */}
+                      <td className="p-3 border-r border-white/5">
+                        {t.locality ? (
+                          <span className="text-[11px] text-slate-300">📍 {t.locality}</span>
+                        ) : <span className="opacity-20">--</span>}
+                      </td>
+
+                      {/* Recorrência */}
+                      <td className="p-3 border-r border-white/5 text-[11px] text-slate-300">
+                        {t.recurrenceMode === 'exata' ? (
+                          <span>📅 Exata ({t.recurrenceExactTime || 'Fixa'})</span>
+                        ) : t.recurrenceMode === 'flexivel' ? (
+                          <span>🔄 Flexível (A cada {t.recurrenceFlexHours}h)</span>
+                        ) : (
+                          <span className="opacity-40">1x Única</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="p-3 border-r border-white/5 text-center">
+                        <span className={`px-2.5 py-1 rounded-lg border text-[10px] font-black ${status.bg}`}>
+                          {status.icon} {status.label}
+                        </span>
+                      </td>
+
+                      {/* Duração Est. */}
+                      <td className="p-3 border-r border-white/5 text-center font-mono opacity-80">
+                        {t.estimatedMinutes}m
+                      </td>
+
+                      {/* Quant. Feita */}
+                      <td className="p-3 border-r border-white/5 text-center font-mono font-bold">
+                        {t.timesCompleted}
+                      </td>
+
+                      {/* Subtarefas / Progresso */}
+                      <td className="p-3 border-r border-white/5">
+                        {t.subtasks.length > 0 ? (
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-bold text-blue-400">
+                              {doneSubtasks}/{t.subtasks.length}
+                            </span>
+                            <span className="text-[10px] text-slate-400 truncate max-w-[150px]">
+                              {doneSubtasks === t.subtasks.length ? '✅ (Tudo Feito)' : `(${t.subtasks.map(s => s.title).join(', ')})`}
+                            </span>
+                          </div>
+                        ) : <span className="opacity-20">--</span>}
+                      </td>
+
+                      {/* Propriedades Ganhas */}
+                      <td className="p-3 border-r border-white/5 text-amber-300 font-medium max-w-[180px] truncate">
+                        {t.rewards ? `+${t.rewards}` : <span className="opacity-20">--</span>}
+                      </td>
+
+                      {/* Inércia Atual */}
+                      <td className="p-3 border-r border-white/5 font-mono text-orange-300">
+                        <InertiaClock lastCompletedAt={t.lastCompletedAt} />
+                      </td>
+
+                      {/* Notas */}
+                      <td className="p-3 border-r border-white/5 opacity-60 italic max-w-[150px] truncate">
+                        {t.notes || '--'}
+                      </td>
+
+                      {/* Ações */}
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => completeTask(t.id)}
+                            title={t.status === 'concluido' ? 'Reabrir' : 'Concluir'}
+                            className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition-all ${
+                              t.status === 'concluido' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 hover:border-emerald-400 hover:text-emerald-400'
+                            }`}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => { setEditingTask(t); setShowForm(true); }}
+                            title="Editar"
+                            className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs hover:border-blue-400 hover:text-blue-400 transition-all"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => deleteTask(t.id)}
+                            title="Excluir"
+                            className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs hover:border-rose-400 hover:text-rose-400 transition-all"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          /* 🎴 VISUALIZAÇÃO EM CARDS */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map(t => {
+              const status = STATUS_META[t.status];
+              const type = TYPE_META[t.taskType];
+              const cls = CLASS_META[t.taskClass];
+
+              return (
+                <div key={t.id} className="bg-[#1d2332] border border-white/10 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                  <div className="flex justify-between items-start">
+                    <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black ${cls.bg} ${cls.color}`}>
+                      {cls.label}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black ${status.bg}`}>
+                      {status.icon} {status.label}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className={`text-base font-bold text-white ${t.status === 'concluido' ? 'line-through text-white/40' : ''}`}>
+                      {t.name}
+                    </h3>
+                    <div className="flex gap-2 items-center mt-1 text-[10px] text-white/50">
+                      <span>{type.icon} {type.label}</span>
+                      {t.category && <span>• 📦 {t.category}</span>}
+                      {t.locality && <span>• 📍 {t.locality}</span>}
+                    </div>
+                  </div>
+
+                  {t.rewards && (
+                    <p className="text-[10px] text-amber-300 font-semibold">🏆 Recompensa: +{t.rewards}</p>
+                  )}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-white/5 text-[10px] text-white/40">
+                    <span>Inércia: <InertiaClock lastCompletedAt={t.lastCompletedAt} /></span>
+                    <div className="flex gap-1">
+                      <button onClick={() => completeTask(t.id)} className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded hover:bg-emerald-500/40">✓ Feito</button>
+                      <button onClick={() => { setEditingTask(t); setShowForm(true); }} className="px-2 py-1 bg-white/5 rounded hover:bg-white/10">✏️</button>
+                      <button onClick={() => deleteTask(t.id)} className="px-2 py-1 bg-rose-500/20 text-rose-300 rounded hover:bg-rose-500/40">🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-        {filtered.map(task => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onEdit={t => { setEditingTask(t); setShowForm(true); }}
-            onDelete={deleteTask}
-            onComplete={completeTask}
-          />
-        ))}
       </div>
 
       {/* Form Modal */}
