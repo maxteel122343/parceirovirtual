@@ -15,6 +15,7 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ user, profile, setProf
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [loading, setLoading] = useState(false);
     const [editReminder, setEditReminder] = useState<Partial<Reminder> | null>(null);
+    const [timelineDay, setTimelineDay] = useState<number | null>(null);
 
     const cardClasses = isDark ? "bg-[#15181e] border-white/5" : "bg-white border-slate-100 shadow-sm";
     const itemClasses = isDark ? "hover:bg-white/5 border-white/5 bg-[#0b0c10]" : "hover:bg-slate-50 border-slate-100 bg-white shadow-sm";
