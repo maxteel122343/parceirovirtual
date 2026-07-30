@@ -19,6 +19,8 @@ export interface TaskItem {
   inerciaAtual: string;
   notas: string;
   concluidaForaHorario?: boolean;
+  isAtivadaPeriodica?: boolean;
+  horarioAgendaAgendado?: string;
 }
 
 const INITIAL_TASKS: TaskItem[] = [
@@ -38,7 +40,9 @@ const INITIAL_TASKS: TaskItem[] = [
     subtarefas: { total: 3, concluidas: 3, itens: ['Supino', 'Agachamento', 'Biceps'] },
     propriedadesGanhas: '+Força Muscular, +Resistência',
     inerciaAtual: '--',
-    notas: 'Foco no Supino'
+    notas: 'Foco no Supino',
+    isAtivadaPeriodica: true,
+    horarioAgendaAgendado: 'Hoje 12:00 PM'
   },
   {
     id: 2,
@@ -56,7 +60,9 @@ const INITIAL_TASKS: TaskItem[] = [
     subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Item Limpeza, +Alimento Armazenado',
     inerciaAtual: '18h Sem Fazer',
-    notas: 'Usar desinfetante'
+    notas: 'Usar desinfetante',
+    isAtivadaPeriodica: true,
+    horarioAgendaAgendado: 'Hoje 15:30 PM'
   },
   {
     id: 3,
@@ -92,7 +98,9 @@ const INITIAL_TASKS: TaskItem[] = [
     subtarefas: { total: 3, concluidas: 3, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Força Muscular, +Resistência',
     inerciaAtual: '--',
-    notas: '--'
+    notas: '--',
+    isAtivadaPeriodica: true,
+    horarioAgendaAgendado: 'Hoje 18:00 PM'
   },
   {
     id: 5,
@@ -128,7 +136,27 @@ const INITIAL_TASKS: TaskItem[] = [
     subtarefas: { total: 2, concluidas: 0, itens: ['Planilha de Gastos', 'Conferir Extrato'] },
     propriedadesGanhas: '+Organização Financeira, +Disciplina',
     inerciaAtual: '24h Sem Fazer',
-    notas: 'Exportar relatórios'
+    notas: 'Exportar relatórios',
+    isAtivadaPeriodica: true,
+    horarioAgendaAgendado: 'Amanhã 09:00 AM'
+  },
+  {
+    id: 7,
+    nome: 'Revisão de Infraestrutura & Cloud',
+    categoria: 'Trabalho',
+    tipo: 'Infra',
+    classe: 'Classe B',
+    localidade: '💻 Escritório',
+    recorrenciaTipo: 'Flexível',
+    recorrencia: 'Flexível (A cada 48h)',
+    proxExecucao: 'Indefinido',
+    status: 'Pendente',
+    duracaoEst: '30m',
+    quantFeita: 4,
+    subtarefas: { total: 2, concluidas: 1, itens: ['Conferir Servidores', 'Logs de Erro'] },
+    propriedadesGanhas: '+Infraestrutura, +Segurança',
+    inerciaAtual: '36h Sem Fazer',
+    notas: 'Check de segurança'
   }
 ];
 
@@ -138,15 +166,29 @@ interface TasksTabProps {
   isDark?: boolean;
 }
 
-export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
+export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
+  const [viewMode, setViewMode] = useState<'PLANILHA' | 'CARDS'>('CARDS');
   const [topTab, setTopTab] = useState<'HOJE' | 'LOCALIDADES' | 'ESTATÍSTICAS'>('HOJE');
+  
+  // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('TODAS');
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('TODOS');
+  const [filterTipo, setFilterTipo] = useState<string>('TODOS');
+  const [sortBy, setSortBy] = useState<'RECENTE' | 'PRIORIDADE' | 'INERCIA'>('RECENTE');
+  const [onlyPeriodicFilter, setOnlyPeriodicFilter] = useState(false);
 
   // -------------------------------------------------------------
-  // TELA 3: MODO "SESSÃO ABERTA" (Modo Combo de Categoria) State
+  // CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA STATE
+  // -------------------------------------------------------------
+  const [ativarQuantidade, setAtivarQuantidade] = useState<number>(5);
+  const [periodoHoras, setPeriodoHoras] = useState<number>(24);
+  const [considerarRecorrencia, setConsiderarRecorrencia] = useState<boolean>(true);
+  const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
+
+  // -------------------------------------------------------------
+  // MODO "SESSÃO ABERTA" (Modo Combo de Categoria) State
   // -------------------------------------------------------------
   const [isComboActive, setIsComboActive] = useState(false);
   const [comboCategory, setComboCategory] = useState<'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa'>('Estudos');
@@ -188,7 +230,73 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
   };
 
   // -------------------------------------------------------------
-  // TELA 4: PERFIL DE PROPRIEDADES E ESTATÍSTICAS
+  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA
+  // -------------------------------------------------------------
+  const handleExecutarAtivacaoInteligente = () => {
+    const now = new Date();
+    
+    // Calculate Score for each task to prioritize
+    const scoredTasks = tasks.map(t => {
+      let score = 0;
+
+      // 1. Status: Pendente tem prioridade máxima
+      if (t.status === 'Pendente') score += 50;
+
+      // 2. Tempo de Inércia (quanto mais tempo sem fazer, maior a pontuação)
+      if (t.inerciaAtual.includes('36h')) score += 60;
+      else if (t.inerciaAtual.includes('24h')) score += 40;
+      else if (t.inerciaAtual.includes('18h')) score += 30;
+
+      // 3. Prioridade / Classe
+      if (t.classe === 'Classe A') score += 35;
+      else if (t.classe === 'Classe B') score += 20;
+      else score += 10;
+
+      // 4. Considerar Recorrência
+      if (considerarRecorrencia) {
+        if (t.recorrenciaTipo === 'Flexível') score += 15;
+      }
+
+      return { task: t, score };
+    });
+
+    // Sort by calculated score descending
+    scoredTasks.sort((a, b) => b.score - a.score);
+
+    // Select top N tasks
+    const selectedTaskIds = new Set(scoredTasks.slice(0, ativarQuantidade).map(item => item.task.id));
+
+    // Calculate time spacing across total hours
+    const intervalMinutes = (periodoHoras * 60) / Math.max(1, ativarQuantidade);
+
+    let currentTime = new Date();
+
+    const updatedTasks = tasks.map(t => {
+      if (selectedTaskIds.has(t.id)) {
+        currentTime = new Date(currentTime.getTime() + intervalMinutes * 60 * 1000);
+        const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dateStr = currentTime.getHours() < 24 ? 'Hoje' : 'Amanhã';
+
+        return {
+          ...t,
+          isAtivadaPeriodica: true,
+          horarioAgendaAgendado: `${dateStr} ${timeStr}`,
+          proxExecucao: timeStr
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    setActivationFeedback(`✨ IA ativou ${ativarQuantidade} tarefas prioritárias distribuídas ao longo das próximas ${periodoHoras} horas na sua agenda!`);
+
+    setTimeout(() => {
+      setActivationFeedback(null);
+    }, 5000);
+  };
+
+  // -------------------------------------------------------------
+  // PERFIL DE PROPRIEDADES E ESTATÍSTICAS
   // -------------------------------------------------------------
   const calculateProperties = () => {
     const propMap: Record<string, number> = {
@@ -217,8 +325,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
   };
 
   const propertiesData = calculateProperties();
-  const totalCompleted = tasks.filter(t => t.status === 'Concluído').length + comboCompletedCount;
-  const offScheduleCompleted = tasks.filter(t => t.concluidaForaHorario).length + 2;
+  const totalCount = tasks.length;
+  const emAbertoCount = tasks.filter(t => t.status === 'Pendente').length;
+  const concluidasCount = tasks.filter(t => t.status === 'Concluído').length + comboCompletedCount;
+  const falhasCount = tasks.filter(t => t.inerciaAtual.includes('24h') || t.inerciaAtual.includes('36h')).length;
+  const periodicCount = tasks.filter(t => t.isAtivadaPeriodica).length;
 
   // -------------------------------------------------------------
   // FLUXO DE CRIAÇÃO DE NOVA TAREFA (Modal "+ Nova Tarefa")
@@ -303,35 +414,54 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
     );
   };
 
-  const filteredTasks = tasks.filter(t => {
-    const matchesSearch =
-      t.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.localidade.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.notas.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.categoria.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filter & Sorting Logic
+  const getFilteredTasks = () => {
+    return tasks.filter(t => {
+      const matchesSearch =
+        t.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.localidade.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.notas.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.categoria.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesCategory = filterCategory === 'TODAS' || t.categoria === filterCategory;
+      const matchesCategory = filterCategory === 'TODAS' || t.categoria === filterCategory;
+      const matchesStatus = filterStatus === 'TODOS' || t.status === filterStatus;
+      const matchesTipo = filterTipo === 'TODOS' || t.tipo === filterTipo;
+      const matchesPeriodic = !onlyPeriodicFilter || t.isAtivadaPeriodica;
 
-    if (topTab === 'HOJE') {
-      return matchesSearch && matchesCategory && (t.status === 'Pendente' || t.proxExecucao.includes('12:00') || t.proxExecucao.includes('2:00'));
-    }
-    return matchesSearch && matchesCategory;
-  });
+      return matchesSearch && matchesCategory && matchesStatus && matchesTipo && matchesPeriodic;
+    }).sort((a, b) => {
+      // Periodic Activated tasks appear first in Feed
+      if (a.isAtivadaPeriodica && !b.isAtivadaPeriodica) return -1;
+      if (!a.isAtivadaPeriodica && b.isAtivadaPeriodica) return 1;
+
+      if (sortBy === 'PRIORIDADE') {
+        const pMap = { 'Classe A': 3, 'Classe B': 2, 'Classe C': 1 };
+        return pMap[b.classe] - pMap[a.classe];
+      }
+      if (sortBy === 'INERCIA') {
+        const getInertiaScore = (str: string) => (str.includes('36h') ? 3 : str.includes('24h') ? 2 : str.includes('18h') ? 1 : 0);
+        return getInertiaScore(b.inerciaAtual) - getInertiaScore(a.inerciaAtual);
+      }
+      return b.id - a.id;
+    });
+  };
+
+  const filteredTasks = getFilteredTasks();
 
   const getCategoryBadgeClass = (cat: string) => {
     switch (cat) {
       case 'Saúde/Fitness':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-300/30';
+        return 'bg-purple-900/40 text-purple-300 border border-purple-500/30';
       case 'Casa':
-        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300 border border-sky-300/30';
+        return 'bg-[#1e293b] text-[#38bdf8] border border-sky-500/30';
       case 'Estudos':
-        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-300/30';
+        return 'bg-indigo-900/40 text-indigo-300 border border-indigo-500/30';
       case 'Trabalho':
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300/30';
+        return 'bg-amber-900/40 text-amber-300 border border-amber-500/30';
       case 'Tarefa':
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-300/30';
+        return 'bg-emerald-900/40 text-emerald-300 border border-emerald-500/30';
       default:
-        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+        return 'bg-slate-800 text-slate-300 border border-slate-700';
     }
   };
 
@@ -342,11 +472,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
   };
 
   return (
-    <div className={`w-full max-w-7xl mx-auto rounded-3xl overflow-hidden shadow-2xl border transition-all ${isDark ? 'bg-[#0f172a] text-slate-100 border-slate-800' : 'bg-slate-900 text-white border-slate-200'}`}>
+    <div className="w-full max-w-7xl mx-auto rounded-3xl overflow-hidden shadow-2xl border border-[#1e293b] bg-[#0b1120] text-slate-100 transition-all font-sans">
       
       {/* BANNER DO MODO COMBO DE CATEGORIA (TELA 3) */}
       {isComboActive && (
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 px-6 py-4 border-b border-indigo-500/40 flex flex-wrap items-center justify-between gap-4 animate-in slide-in-from-top duration-500">
+        <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-purple-950 px-6 py-4 border-b border-indigo-500/40 flex flex-wrap items-center justify-between gap-4 animate-in slide-in-from-top duration-500">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-2xl font-black shadow-lg animate-pulse">
               ⚡
@@ -365,7 +495,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="hidden md:flex items-center gap-4 text-xs font-bold bg-black/30 px-4 py-2 rounded-2xl border border-white/10">
+            <div className="hidden md:flex items-center gap-4 text-xs font-bold bg-black/40 px-4 py-2 rounded-2xl border border-white/10">
               <div>
                 <span className="text-slate-400 block text-[9px] uppercase tracking-wider">Concluídas no Combo</span>
                 <span className="text-lg font-black text-emerald-400">+{comboCompletedCount}</span>
@@ -389,262 +519,374 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = false }) => {
         </div>
       )}
 
-      {/* Top Header Bar */}
-      <div className="bg-[#1e293b] px-6 py-4 flex flex-wrap items-center justify-between border-b border-slate-700/60 gap-4">
-        <h1 className="text-lg md:text-xl font-black tracking-wider uppercase italic text-white flex items-center gap-2">
-          <span>📋</span> PLANILHA GERAL DE TAREFAS
-        </h1>
-
-        <div className="flex items-center gap-2 md:gap-3 bg-[#0f172a]/60 p-1.5 rounded-2xl border border-slate-700/50">
-          <button
-            onClick={() => setTopTab('HOJE')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-              topTab === 'HOJE' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>📅</span> HOJE
-          </button>
-          <button
-            onClick={() => setTopTab('LOCALIDADES')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-              topTab === 'LOCALIDADES' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>📍</span> LOCALIDADES
-          </button>
-          <button
-            onClick={() => setTopTab('ESTATÍSTICAS')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-              topTab === 'ESTATÍSTICAS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>📊</span> ESTATÍSTICAS
-          </button>
+      {/* TOP BAR DE CABEÇALHO */}
+      <div className="bg-[#111827] px-6 py-5 flex flex-wrap items-center justify-between border-b border-[#1f2937] gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl text-blue-400 shadow-inner">
+            📊
+          </div>
+          <div>
+            <h1 className="text-lg md:text-xl font-black tracking-tight uppercase italic text-white flex items-center gap-2">
+              CARDS DE TAREFAS
+            </h1>
+            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">FEED INTERATIVO DE CARDS</p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Botão Modo Combo */}
-          {!isComboActive && (
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+          {/* Selector de Modo de Visualização (Planilha vs Cards/Feed) */}
+          <div className="flex items-center bg-[#1f2937]/80 p-1 rounded-2xl border border-slate-700/60 shadow-inner">
             <button
-              onClick={() => startComboSession('Estudos')}
-              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
+              onClick={() => setViewMode('PLANILHA')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                viewMode === 'PLANILHA' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <span>⚡</span> Modo Combo
+              <span>📊</span> PLANILHA
             </button>
-          )}
+            <button
+              onClick={() => setViewMode('CARDS')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                viewMode === 'CARDS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>💳</span> CARDS
+            </button>
+          </div>
+
+          {/* Botão de Filtro Rápido Ativação Periódica */}
+          <button
+            onClick={() => setOnlyPeriodicFilter(!onlyPeriodicFilter)}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 border ${
+              onlyPeriodicFilter
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+            }`}
+          >
+            <span>⚡</span> ATIVAÇÃO PERIÓDICA ({periodicCount})
+          </button>
 
           {/* Botão Criar Nova Tarefa (+) */}
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-blue-500/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-blue-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
           >
-            <span>+</span> Nova Tarefa
+            <span>+</span> NOVA TAREFA
           </button>
         </div>
       </div>
 
-      {/* Sub Bar: Search & Filter */}
-      <div className="bg-[#0f172a] px-6 py-3 flex flex-wrap items-center justify-between border-b border-slate-800 gap-4">
-        <div className="flex items-center gap-3 relative">
-          <button
-            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 border border-slate-700 transition-all"
-          >
-            <span>⚡ Filtra ({filterCategory})</span>
-            <span className="text-[10px]">▼</span>
-          </button>
+      {/* FEED & CONTROL AREA */}
+      <div className="p-6 md:p-8 space-y-6">
+        
+        {/* BANNER DE CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA (LAYOUT EXATO DA IMAGEM) */}
+        <div className="p-6 rounded-3xl bg-gradient-to-r from-[#111827] via-[#1f2937]/50 to-[#111827] border border-amber-500/30 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 text-lg">⚡</span>
+              <h2 className="text-sm font-black uppercase tracking-widest text-amber-400">
+                CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA
+              </h2>
+            </div>
+            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-500/60 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+              AUTOMAÇÃO DE PRODUTIVIDADE
+            </span>
+          </div>
 
-          {showFilterDropdown && (
-            <div className="absolute top-12 left-0 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 p-2 min-w-[170px] space-y-1 animate-in fade-in duration-200">
-              {['TODAS', 'Saúde/Fitness', 'Casa', 'Estudos', 'Trabalho', 'Tarefa'].map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    setFilterCategory(cat);
-                    setShowFilterDropdown(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
-                    filterCategory === cat ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+          <p className="text-xs text-slate-300 mb-6 font-medium leading-relaxed max-w-3xl">
+            Defina quantas tarefas você quer que a IA ative no seu feed e distribua automaticamente na sua agenda ao longo do tempo estipulado.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-800">
+            {/* Input Controls */}
+            <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-200">
+              <span className="text-slate-400 uppercase tracking-wider text-[11px]">ATIVAR</span>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={ativarQuantidade}
+                onChange={e => setAtivarQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-16 bg-[#0b1120] text-center font-black text-amber-400 border border-amber-500/40 rounded-xl py-2 px-2 focus:outline-none focus:border-amber-400 shadow-inner"
+              />
+              <span className="text-slate-400 uppercase tracking-wider text-[11px]">TAREFAS</span>
+
+              <span className="text-slate-400 uppercase tracking-wider text-[11px] ml-2">A CADA</span>
+              <input
+                type="number"
+                min="1"
+                max="168"
+                value={periodoHoras}
+                onChange={e => setPeriodoHoras(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-20 bg-[#0b1120] text-center font-black text-amber-400 border border-amber-500/40 rounded-xl py-2 px-2 focus:outline-none focus:border-amber-400 shadow-inner"
+              />
+              <span className="text-slate-400 uppercase tracking-wider text-[11px]">HORAS (EX: 24H, 48H)</span>
+
+              <label className="flex items-center gap-2 ml-4 cursor-pointer text-slate-300 hover:text-white transition-colors">
+                <input
+                  type="checkbox"
+                  checked={considerarRecorrencia}
+                  onChange={e => setConsiderarRecorrencia(e.target.checked)}
+                  className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-amber-500/40"
+                />
+                <span className="text-[11px] font-bold uppercase tracking-wider">CONSIDERAR FREQUÊNCIA DE RECORRÊNCIA</span>
+              </label>
+            </div>
+
+            {/* Botão de Disparo da Ativação Inteligente */}
+            <button
+              onClick={handleExecutarAtivacaoInteligente}
+              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all text-xs flex items-center gap-2"
+            >
+              <span>🚀</span> EXECUTAR ATIVAÇÃO INTELIGENTE
+            </button>
+          </div>
+
+          {activationFeedback && (
+            <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs font-bold text-amber-300 animate-in fade-in duration-300 flex items-center gap-2">
+              <span>{activationFeedback}</span>
             </div>
           )}
         </div>
 
-        <div className="relative flex-1 max-w-sm">
-          <input
-            type="text"
-            placeholder="Buscar por nome, local ou nota..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800/80 text-white placeholder-slate-400 text-xs font-medium pl-9 pr-4 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-blue-500 transition-all"
-          />
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
-        </div>
-      </div>
-
-      {/* RENDERIZADOR DAS GUIA / TABS */}
-      {topTab === 'ESTATÍSTICAS' ? (
-        /* TELA 4: PERFIL DE PROPRIEDADES E ESTATÍSTICAS */
-        <div className="p-6 md:p-8 space-y-8 bg-[#0b1120]">
-          {/* Header Dashboard */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-6">
-            <div>
-              <h2 className="text-2xl font-black uppercase tracking-tight italic text-white flex items-center gap-3">
-                📊 Perfil de Atributos & Estatísticas Gerais
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">Impacto acumulado das suas rotinas e histórico de execução</p>
-            </div>
-            <div className="flex items-center gap-3 bg-slate-800/80 p-2.5 rounded-2xl border border-slate-700">
-              <span className="text-xs font-bold text-slate-400">Status Geral:</span>
-              <span className="text-xs font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-xl border border-emerald-500/20">
-                Alta Produtividade 🔥
-              </span>
-            </div>
+        {/* MÉTRICAS (GRID DE CARDS TOTAL, EM ABERTO, CONCLUÍDAS, FALHAS) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-5 rounded-2xl bg-[#111827] border border-[#1f2937] flex flex-col items-center justify-center text-center">
+            <span className="text-3xl font-black text-white">{totalCount}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">TOTAL</span>
           </div>
 
-          {/* Grid de Atributos Acumulados */}
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2">
-              <span>🛡️</span> PAINEL DE ATRIBUTOS GANHOS
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {Object.entries(propertiesData).map(([propName, score]) => (
-                <div key={propName} className="p-5 rounded-2xl bg-slate-800/50 border border-slate-700/80 hover:border-blue-500/40 transition-all">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-bold text-slate-200">{propName}</span>
-                    <span className="text-xs font-black text-blue-400 font-mono">Nível {Math.floor(score / 20) + 1}</span>
-                  </div>
-                  <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden mb-2 border border-slate-700/40">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full transition-all duration-1000"
-                      style={{ width: `${Math.min(100, (score % 100))}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400">{score} Pontos Acumulados</span>
-                </div>
-              ))}
-            </div>
+          <div className="p-5 rounded-2xl bg-[#111827] border border-[#1f2937] flex flex-col items-center justify-center text-center">
+            <span className="text-3xl font-black text-amber-400">{emAbertoCount}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">EM ABERTO</span>
           </div>
 
-          {/* Métricas Gerais */}
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 flex items-center gap-2">
-              <span>📈</span> MÉTRICAS DE EXECUÇÃO
-            </h3>
+          <div className="p-5 rounded-2xl bg-[#111827] border border-[#1f2937] flex flex-col items-center justify-center text-center">
+            <span className="text-3xl font-black text-emerald-400">{concluidasCount}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">CONCLUÍDAS</span>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 rounded-2xl bg-slate-800/40 border border-slate-700/80 flex flex-col justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Concluído</span>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-emerald-400">{totalCompleted}</span>
-                  <span className="text-xs font-bold text-slate-400">tarefas finalizadas</span>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-800/40 border border-slate-700/80 flex flex-col justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fora do Horário</span>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-amber-400">{offScheduleCompleted}</span>
-                  <span className="text-xs font-bold text-slate-400">conclusões flexíveis</span>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-800/40 border border-slate-700/80 flex flex-col justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Inércia Média das Rotinas</span>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-indigo-400">12.4h</span>
-                  <span className="text-xs font-bold text-slate-400">tempo médio de espera</span>
-                </div>
-              </div>
-            </div>
+          <div className="p-5 rounded-2xl bg-[#111827] border border-[#1f2937] flex flex-col items-center justify-center text-center">
+            <span className="text-3xl font-black text-rose-400">{falhasCount}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">FALHAS</span>
           </div>
         </div>
-      ) : (
-        /* TABELA DA PLANILHA DE TAREFAS */
-        <div className="overflow-x-auto bg-slate-900 text-slate-200 no-scrollbar">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-800/90 text-slate-300 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-700/80">
-                <th className="py-3 px-3 border-r border-slate-700/60 text-center w-12">ID</th>
-                <th className="py-3 px-4 border-r border-slate-700/60 min-w-[180px]">NOME DA TAREFA</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[130px]">CATEGORIA</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[100px]">TIPO</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[90px]">CLASSE</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[130px]">LOCALIDADE</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[160px]">RECORRÊNCIA</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[120px]">PRÓX. EXECUÇÃO</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[110px]">STATUS</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[100px]">DURAÇÃO EST.</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[90px] text-center">QUANT. FEITA</th>
-                <th className="py-3 px-4 border-r border-slate-700/60 min-w-[200px]">SUBTAREFAS (Progresso)</th>
-                <th className="py-3 px-4 border-r border-slate-700/60 min-w-[220px]">PROPRIEDADES GANHAS</th>
-                <th className="py-3 px-3 border-r border-slate-700/60 min-w-[130px]">INÉRCIA ATUAL</th>
-                <th className="py-3 px-4 min-w-[150px]">NOTAS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-[12px] font-medium">
-              {filteredTasks.map((t, idx) => (
-                <tr
-                  key={t.id}
-                  className={`hover:bg-slate-800/40 transition-colors ${
-                    idx % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-900/90'
-                  }`}
-                >
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-400">{t.id}</td>
-                  <td className="py-2.5 px-4 border-r border-slate-800 font-bold text-white">{t.nome}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-tight inline-block ${getCategoryBadgeClass(t.categoria)}`}>
+
+        {/* BARRA DE FILTROS E BUSCA */}
+        <div className="p-4 rounded-2xl bg-[#111827] border border-[#1f2937] flex flex-wrap items-center justify-between gap-4">
+          <div className="relative flex-1 min-w-[220px]">
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full bg-[#0b1120] text-white placeholder-slate-500 text-xs font-medium pl-9 pr-4 py-2.5 rounded-xl border border-slate-800 focus:outline-none focus:border-blue-500 transition-all"
+            />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            {/* Status Dropdown */}
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="bg-[#0b1120] border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 focus:outline-none focus:border-blue-500"
+            >
+              <option value="TODOS">Todos Status</option>
+              <option value="Pendente">Pendente</option>
+              <option value="Concluído">Concluído</option>
+            </select>
+
+            {/* Tipo Dropdown */}
+            <select
+              value={filterTipo}
+              onChange={e => setFilterTipo(e.target.value)}
+              className="bg-[#0b1120] border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 focus:outline-none focus:border-blue-500"
+            >
+              <option value="TODOS">Todos Tipos</option>
+              <option value="Normal">Normal</option>
+              <option value="Manutenção">Manutenção</option>
+              <option value="Organização">Organização</option>
+              <option value="Infra">Infra</option>
+              <option value="Intervalo">Intervalo</option>
+            </select>
+
+            {/* Ordenar Dropdown */}
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="bg-[#0b1120] border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 focus:outline-none focus:border-blue-500"
+            >
+              <option value="RECENTE">↕ Recente</option>
+              <option value="PRIORIDADE">⭐ Prioridade</option>
+              <option value="INERCIA">⏳ Maior Inércia</option>
+            </select>
+          </div>
+        </div>
+
+        {/* MODO CARDS / FEED INTERATIVO */}
+        {viewMode === 'CARDS' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+            {filteredTasks.map(t => (
+              <div
+                key={t.id}
+                className={`p-6 rounded-3xl border transition-all duration-300 relative flex flex-col justify-between ${
+                  t.isAtivadaPeriodica
+                    ? 'bg-gradient-to-b from-[#1e1b4b]/60 to-[#0f172a] border-amber-500/40 shadow-xl shadow-amber-500/5'
+                    : 'bg-[#111827] border-[#1f2937] hover:border-slate-700'
+                }`}
+              >
+                {/* Badge Ativação Periódica no Card */}
+                {t.isAtivadaPeriodica && (
+                  <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                    <span>⚡ Ativação Periódica</span>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-tight ${getCategoryBadgeClass(t.categoria)}`}>
                       {t.categoria}
                     </span>
-                  </td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300">{t.tipo}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                       {t.classe}
                     </span>
-                  </td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-200">{t.localidade}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300 text-[11px]">{t.recorrencia}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300">{t.proxExecucao}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800">
-                    <button
-                      onClick={() => toggleTaskStatus(t.id)}
-                      className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${getStatusBadgeClass(t.status)}`}
-                    >
-                      {t.status}
-                    </button>
-                  </td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300">{t.duracaoEst}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-200">{t.quantFeita}</td>
-                  <td className="py-2.5 px-4 border-r border-slate-800">
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="font-bold text-slate-300">
-                        {t.subtarefas.concluidas}/{t.subtarefas.total}
-                      </span>
-                      <span className={t.subtarefas.concluidas === t.subtarefas.total ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                        {t.subtarefas.concluidas === t.subtarefas.total ? '[✓]' : '[ ]'}
-                      </span>
-                      <span className="text-slate-400 truncate">({t.subtarefas.itens.join(', ')})</span>
+                  </div>
+
+                  <h3 className="text-base font-black text-white mb-2 leading-snug">{t.nome}</h3>
+                  <p className="text-xs text-slate-400 font-medium mb-4 flex items-center gap-1.5">
+                    <span>{t.localidade}</span>
+                    <span className="text-slate-600">•</span>
+                    <span>{t.duracaoEst}</span>
+                  </p>
+
+                  {/* Agendamento na Agenda pela IA */}
+                  {t.horarioAgendaAgendado && (
+                    <div className="mb-4 p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/20 text-xs font-bold text-blue-300 flex items-center gap-2">
+                      <span>📅 Agendado na Agenda:</span>
+                      <span className="text-white">{t.horarioAgendaAgendado}</span>
                     </div>
-                  </td>
-                  <td className="py-2.5 px-4 border-r border-slate-800 text-emerald-400 font-medium text-[11px]">{t.propriedadesGanhas}</td>
-                  <td className="py-2.5 px-3 border-r border-slate-800 text-slate-400 text-[11px]">{t.inerciaAtual}</td>
-                  <td className="py-2.5 px-4 text-slate-300 text-[11px] italic">{t.notas}</td>
+                  )}
+
+                  {/* Subtarefas */}
+                  <div className="mb-4 space-y-1.5 bg-[#0b1120] p-3 rounded-2xl border border-slate-800">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                      Subtarefas ({t.subtarefas.concluidas}/{t.subtarefas.total})
+                    </span>
+                    {t.subtarefas.itens.map((sub, sIdx) => (
+                      <div key={sIdx} className="flex items-center gap-2 text-xs text-slate-300">
+                        <span className="text-emerald-400 font-bold">✓</span>
+                        <span>{sub}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Propriedades Ganhas */}
+                  <div className="mb-4 text-xs font-medium text-emerald-400 bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-500/20">
+                    <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider mb-0.5">Propriedades Ganhas</span>
+                    {t.propriedadesGanhas}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400 font-medium">Inércia: {t.inerciaAtual}</span>
+                  <button
+                    onClick={() => toggleTaskStatus(t.id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${getStatusBadgeClass(t.status)}`}
+                  >
+                    {t.status}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* MODO SPREADSHEET (TABELA COMPLETA) */
+          <div className="overflow-x-auto bg-[#111827] text-slate-200 rounded-2xl border border-[#1f2937] no-scrollbar">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#1f2937] text-slate-300 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-700">
+                  <th className="py-3 px-3 border-r border-slate-700 text-center w-12">ID</th>
+                  <th className="py-3 px-4 border-r border-slate-700 min-w-[180px]">NOME DA TAREFA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">CATEGORIA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[100px]">TIPO</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[90px]">CLASSE</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">LOCALIDADE</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[160px]">RECORRÊNCIA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[140px]">AGENDA IA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[110px]">STATUS</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[100px]">DURAÇÃO EST.</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[90px] text-center">QUANT. FEITA</th>
+                  <th className="py-3 px-4 border-r border-slate-700 min-w-[200px]">SUBTAREFAS (Progresso)</th>
+                  <th className="py-3 px-4 border-r border-slate-700 min-w-[220px]">PROPRIEDADES GANHAS</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">INÉRCIA ATUAL</th>
+                  <th className="py-3 px-4 min-w-[150px]">NOTAS</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-[12px] font-medium">
+                {filteredTasks.map((t, idx) => (
+                  <tr
+                    key={t.id}
+                    className={`hover:bg-slate-800/40 transition-colors ${
+                      t.isAtivadaPeriodica ? 'bg-amber-500/5' : idx % 2 === 0 ? 'bg-[#111827]' : 'bg-[#0f172a]'
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-400">{t.id}</td>
+                    <td className="py-2.5 px-4 border-r border-slate-800 font-bold text-white flex items-center gap-2">
+                      {t.isAtivadaPeriodica && <span className="text-amber-400 text-xs">⚡</span>}
+                      <span>{t.nome}</span>
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-tight inline-block ${getCategoryBadgeClass(t.categoria)}`}>
+                        {t.categoria}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300">{t.tipo}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-800">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {t.classe}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-slate-200">{t.localidade}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300 text-[11px]">{t.recorrencia}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 font-bold text-blue-400 text-[11px]">
+                      {t.horarioAgendaAgendado || t.proxExecucao}
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800">
+                      <button
+                        onClick={() => toggleTaskStatus(t.id)}
+                        className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${getStatusBadgeClass(t.status)}`}
+                      >
+                        {t.status}
+                      </button>
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300">{t.duracaoEst}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-200">{t.quantFeita}</td>
+                    <td className="py-2.5 px-4 border-r border-slate-800">
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <span className="font-bold text-slate-300">
+                          {t.subtarefas.concluidas}/{t.subtarefas.total}
+                        </span>
+                        <span className={t.subtarefas.concluidas === t.subtarefas.total ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                          {t.subtarefas.concluidas === t.subtarefas.total ? '[✓]' : '[ ]'}
+                        </span>
+                        <span className="text-slate-400 truncate">({t.subtarefas.itens.join(', ')})</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-4 border-r border-slate-800 text-emerald-400 font-medium text-[11px]">{t.propriedadesGanhas}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-slate-400 text-[11px]">{t.inerciaAtual}</td>
+                    <td className="py-2.5 px-4 text-slate-300 text-[11px] italic">{t.notas}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* MODAL DE CRIAÇÃO DE NOVA TAREFA (3. FLUXO DE CRIAÇÃO) */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
               <h2 className="text-xl font-black uppercase italic text-white flex items-center gap-2">
