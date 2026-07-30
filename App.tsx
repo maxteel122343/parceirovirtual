@@ -96,12 +96,28 @@ function App() {
   }, [profile]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.warn('Supabase auth session error:', error.message);
+          supabase.auth.signOut().catch(() => {});
+          setUser(null);
+        } else {
+          setUser(session?.user ?? null);
+        }
+      })
+      .catch(err => {
+        console.warn('Invalid refresh token caught, resetting auth:', err);
+        supabase.auth.signOut().catch(() => {});
+        setUser(null);
+      });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+      } else {
+        setUser(session?.user ?? null);
+      }
     });
 
     return () => subscription.unsubscribe();
