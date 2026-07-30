@@ -727,6 +727,37 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         }
       };
 
+      const createTaskTool = {
+        name: 'create_task',
+        description: 'Cria ou anota uma nova tarefa na lista de tarefas do usuário. Use sempre que o usuário pedir para criar, anotar, adicionar ou registrar uma tarefa, afazer ou missão.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            name: {
+              type: Type.STRING,
+              description: 'Título ou nome direto da tarefa (ex: "Limpar a pia", "Ir à academia", "Comprar pão")'
+            },
+            category: {
+              type: Type.STRING,
+              description: 'Categoria temática (ex: "Saúde", "Casa", "Trabalho", "Estudos")'
+            },
+            task_type: {
+              type: Type.STRING,
+              description: 'Tipo da tarefa: "normal", "manutencao", "organizacao", "infra" ou "intervalo"'
+            },
+            task_class: {
+              type: Type.STRING,
+              description: 'Classe de prioridade: "A" (urgente), "B" (importante) ou "C" (baixa)'
+            },
+            notes: {
+              type: Type.STRING,
+              description: 'Notas ou detalhes adicionais da tarefa'
+            }
+          },
+          required: ['name']
+        }
+      };
+
       let extraContext = "";
       if (callReason === "callback_abrupt") extraContext = "Motivo da ligação: O usuário desligou na cara antes. Cobre explicações.";
       else if (callReason === "welcome") extraContext = "Motivo da ligação: O usuário acabou de entrar no app e você está dando as boas-vindas automaticamente. Seja carinhosa e receptiva.";
