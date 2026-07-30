@@ -624,64 +624,64 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
   const failed = tasks.filter(t => t.status === 'falhou' || t.status === 'nao_concluido').length;
 
   return (
-    <div className="flex flex-col h-full bg-[#181d29] text-white font-sans overflow-hidden border border-white/10 rounded-[2rem] shadow-2xl">
+    <div className="flex flex-col h-full bg-[#181d29] text-white font-sans overflow-hidden border border-white/10 rounded-[1.5rem] md:rounded-[2rem] shadow-2xl">
       {/* Header Bar / Controls */}
-      <div className="px-6 pt-6 pb-4 bg-[#1f2636] border-b border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-xl shadow-lg">
+      <div className="p-3 sm:p-6 bg-[#1f2636] border-b border-white/10 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-lg sm:text-xl shadow-lg flex-shrink-0">
               {viewMode === 'table' ? '📋' : '📊'}
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tighter uppercase">
-                {viewMode === 'table' ? 'PLANILHA GERAL DE TAREFAS' : 'SESSÃO DE CARDS / FEED DE TAREFAS'}
+              <h1 className="text-base sm:text-xl font-black tracking-tighter uppercase leading-tight">
+                {viewMode === 'table' ? 'PLANILHA GERAL DE TAREFAS' : 'CARDS DE TAREFAS'}
               </h1>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">
-                {viewMode === 'table' ? 'Visão Geral Ampla em Tabela (DataGrid)' : 'Feed Interativo de Cards'}
+              <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] opacity-40">
+                {viewMode === 'table' ? 'Visão Ampla em Tabela (DataGrid)' : 'Feed Interativo de Cards'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
             {/* View Mode Selector */}
-            <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
+            <div className="flex bg-white/5 border border-white/10 p-0.5 sm:p-1 rounded-xl">
               <button
                 onClick={() => setViewMode('table')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                className={`px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
               >
                 📋 Planilha
               </button>
               <button
                 onClick={() => setViewMode('cards')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'cards' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                className={`px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'cards' ? 'bg-blue-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
               >
-                📊 Cards/Feed
+                📊 Cards
               </button>
             </div>
 
             {/* Layout dos Cards (quando no modo cards) */}
             {viewMode === 'cards' && (
-              <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
+              <div className="flex bg-white/5 border border-white/10 p-0.5 sm:p-1 rounded-xl">
                 <button
                   onClick={() => setCardsLayout('grid')}
-                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${cardsLayout === 'grid' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                  className={`px-2 py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase transition-all ${cardsLayout === 'grid' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
                   title="Layout em Grade"
                 >
-                  田 Grade
+                  Grade
                 </button>
                 <button
                   onClick={() => setCardsLayout('feed')}
-                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${cardsLayout === 'feed' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
-                  title="Layout em Feed (Coluna Única Rola)"
+                  className={`px-2 py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase transition-all ${cardsLayout === 'feed' ? 'bg-indigo-600 text-white shadow' : 'opacity-40 hover:opacity-100'}`}
+                  title="Layout em Feed (Coluna Única)"
                 >
-                  ☰ Feed
+                  Feed
                 </button>
               </div>
             )}
 
             <button
               onClick={() => { setEditingTask(undefined); setShowForm(true); }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95"
+              className="flex-1 sm:flex-initial px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95 text-center whitespace-nowrap"
             >
               + Nova Tarefa
             </button>
@@ -689,33 +689,33 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
         </div>
 
         {/* Top Summary Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           {[
             { label: 'Total', val: total, color: 'text-white' },
             { label: 'Em Aberto', val: open, color: 'text-blue-400' },
             { label: 'Concluídas', val: done, color: 'text-emerald-400' },
             { label: 'Falhas', val: failed, color: 'text-rose-400' },
           ].map(s => (
-            <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-              <p className={`text-xl font-black ${s.color}`}>{s.val}</p>
-              <p className="text-[8px] font-black uppercase tracking-widest opacity-40 mt-0.5">{s.label}</p>
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-2 sm:p-3 text-center">
+              <p className={`text-base sm:text-xl font-black ${s.color}`}>{s.val}</p>
+              <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest opacity-40 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
 
         {/* Filter bar */}
-        <div className="flex gap-2 flex-wrap items-center">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Buscar por nome ou categoria..."
-            className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500/60 transition-all"
+            placeholder="🔍 Buscar..."
+            className="col-span-2 sm:flex-1 min-w-0 sm:min-w-[180px] bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-blue-500/60 transition-all"
           />
 
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value as FilterStatus)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
+            className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold text-white/80 focus:outline-none transition-all truncate"
           >
             <option value="all" className="bg-[#1f2636]">Todos Status</option>
             {(Object.entries(STATUS_META) as [TaskStatus, any][]).map(([k, v]) => (
@@ -727,9 +727,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
             <select
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
+              className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold text-white/80 focus:outline-none transition-all truncate"
             >
-              <option value="" className="bg-[#1f2636]">Todas Categorias</option>
+              <option value="" className="bg-[#1f2636]">Categorias</option>
               {categories.map(c => <option key={c} value={c} className="bg-[#1f2636]">{c}</option>)}
             </select>
           )}
@@ -737,7 +737,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
           <select
             value={filterType}
             onChange={e => setFilterType(e.target.value as TaskType | 'all')}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all"
+            className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold text-white/80 focus:outline-none transition-all truncate"
           >
             <option value="all" className="bg-[#1f2636]">Todos Tipos</option>
             {(Object.entries(TYPE_META) as [TaskType, any][]).map(([k, v]) => (
@@ -748,9 +748,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, initialMode = 'table' 
           <select
             value={sortMode}
             onChange={e => setSortMode(e.target.value as SortMode)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-bold text-white/80 focus:outline-none transition-all ml-auto"
+            className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-[9px] sm:text-[10px] font-bold text-white/80 focus:outline-none transition-all truncate sm:ml-auto"
           >
-            <option value="created" className="bg-[#1f2636]">↕ Mais Recente</option>
+            <option value="created" className="bg-[#1f2636]">↕ Recente</option>
             <option value="class" className="bg-[#1f2636]">↕ Classe A→C</option>
             <option value="status" className="bg-[#1f2636]">↕ Status</option>
             <option value="category" className="bg-[#1f2636]">↕ Categoria</option>
