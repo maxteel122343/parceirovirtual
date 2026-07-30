@@ -253,3 +253,67 @@ export interface ChatMessage {
   is_read: boolean;
   sender_profile?: UserProfile;
 }
+
+export enum TaskStatus {
+  OPEN = 'Em Aberto',
+  PENDING = 'Pendente',
+  COMPLETED = 'Concluído',
+  COMPLETED_LATE = 'Concluído Fora do Horário',
+  POSTPONED = 'Adiado',
+  NOT_COMPLETED = 'Não Concluído',
+  FAILED = 'Falhou'
+}
+
+export enum TaskPriorityClass {
+  CLASS_A = 'Classe A',
+  CLASS_B = 'Classe B',
+  CLASS_C = 'Classe C'
+}
+
+export enum TaskType {
+  MAINTENANCE = 'Manutenção',
+  NORMAL = 'Normal',
+  ORGANIZATION = 'Organização',
+  INFRA = 'Infra',
+  BREAK = 'Intervalo'
+}
+
+export enum RecurrenceMode {
+  EXACT = 'Exata',
+  FLEXIBLE = 'Flexível'
+}
+
+export interface TaskSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface AppTask {
+  id: string;
+  name: string;
+  category: string;
+  status: TaskStatus;
+  priority: TaskPriorityClass;
+  type: TaskType;
+  recurrenceMode: RecurrenceMode;
+  recurrenceRule?: string; // ex: "Toda segunda às 14:00" ou "A cada 24 horas"
+  flexibleIntervalHours?: number; // ex: 10, 24, 72
+  nextExecutionAt?: string; // ISO ou formatado "12:00 PM", "2:00 PM"
+  realizedCount: number; // Quantas vezes concluída
+  estimatedDurationMinutes: number; // Duração estimada/real em min
+  lastCompletedAt?: string | null; // ISO timestamp para cálculo de Inércia
+  location: string; // Ex: Banheiro, PC, Cozinha, Academia
+  subtasks: TaskSubtask[];
+  earnedProperties: string[]; // Ex: ["+Força Muscular", "+Item Limpeza"]
+  notes?: string;
+  createdAt: string;
+}
+
+export interface CategorySession {
+  category: string;
+  startedAt: number; // timestamp
+  elapsedSeconds: number;
+  completedTaskIds: string[];
+}
+

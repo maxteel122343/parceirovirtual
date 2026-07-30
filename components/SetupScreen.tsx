@@ -9,8 +9,8 @@ import { supabase } from '../supabaseClient';
 import { ChatWindow } from './ChatWindow';
 import { MapTab } from './MapTab';
 import { InvitesTab } from './InvitesTab';
-import { addConnectionLog } from '../logger';
 import { TasksTab } from './TasksTab';
+import { addConnectionLog } from '../logger';
 
 interface SetupScreenProps {
     profile: PartnerProfile;
@@ -39,12 +39,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
         return () => window.removeEventListener('connection-log-updated', handleLogUpdate);
     }, []);
 
-    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks' | 'stats'>(() => {
+    const [activeTab, setActiveTabState] = useState<'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks'>(() => {
         const saved = sessionStorage.getItem('warm_activeTab');
         return (saved as any) || 'gallery';
     });
 
-    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks' | 'stats') => {
+    const setActiveTab = (tab: 'dashboard' | 'gallery' | 'contacts' | 'calendar' | 'memory' | 'config' | 'chats' | 'map' | 'invites' | 'tasks') => {
         sessionStorage.setItem('warm_activeTab', tab);
         setActiveTabState(tab);
     };
@@ -813,10 +813,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
             {/* Sidebar - Vertical Navigation (Permanent) */}
             <aside
-                className={`fixed left-0 top-0 h-full z-[80] transition-all duration-500 ease-in-out border-r shadow-2xl flex flex-col py-4 ${isSidebarExpanded ? 'w-56 md:w-64' : 'w-16 md:w-20'} ${isLight ? 'bg-white/95 border-slate-100' : 'bg-[#0b0c10]/95 border-white/5'} backdrop-blur-2xl`}
+                className={`fixed left-0 top-0 h-full z-[80] transition-all duration-500 ease-in-out border-r shadow-2xl flex flex-col py-8 ${isSidebarExpanded ? 'w-56 md:w-64' : 'w-16 md:w-20'} ${isLight ? 'bg-white/95 border-slate-100' : 'bg-[#0b0c10]/95 border-white/5'} backdrop-blur-2xl`}
             >
                 {/* Expand/Collapse Toggle Layer - Desktop: Hover, Mobile/All: Click managed by buttons below */}
-                <div className={`mb-6 flex items-center gap-3 px-5 transition-all duration-500 ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
+                <div className={`mb-12 flex items-center gap-3 px-5 transition-all duration-500 ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
                     <div className="w-10 h-10 rounded-xl bg-blue-600 flex-shrink-0 flex items-center justify-center text-xl shadow-lg shadow-blue-500/20">⚡</div>
                     {isSidebarExpanded && (
                         <h1 className="text-lg font-black tracking-tighter uppercase italic truncate animate-in fade-in slide-in-from-left-4 duration-500">
@@ -831,9 +831,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                         { id: 'dashboard', label: 'Início', icon: '🏠' },
                         { id: 'contacts', label: 'Contatos', icon: '👤' },
                         { id: 'gallery', label: 'Galeria', icon: '🖼️' },
-                        { id: 'calendar', label: 'Agenda', icon: '📅' },
-                        { id: 'tasks', label: 'Tarefas', icon: '📋' },
-                        { id: 'stats', label: 'Estatísticas', icon: '📊' }
+                        { id: 'calendar', label: 'Agenda', icon: '📅' }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -976,7 +974,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                     )}
                                                 </button>
 
-                                                {/* Memória */}
+                                                 {/* Planilha de Tarefas */}
+                                                 <button
+                                                     onClick={() => setActiveTab('tasks')}
+                                                     className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
+                                                     title="Planilha de Tarefas"
+                                                 >
+                                                     <span>📊</span>
+                                                 </button>
+
+                                                 {/* Memória */}
                                                 <button
                                                     onClick={() => setActiveTab('memory')}
                                                     className="p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm"
@@ -1437,6 +1444,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                         <span className="text-lg">📞</span>
                                                         <span className="text-[10px] font-black uppercase tracking-widest">{ai.callCount || 0} Chamadas Efetuadas</span>
                                                     </div>
+
+                                                    {/* Planilha de Tarefas */}
+                                                    <button
+                                                        onClick={() => setActiveTab('tasks')}
+                                                        className={`p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all text-sm flex items-center gap-1 ${activeTab === 'tasks' ? 'bg-[#161b22] text-blue-500 font-bold shadow' : ''}`}
+                                                        title="Planilha de Tarefas"
+                                                    >
+                                                        <span>📊</span>
+                                                    </button>
 
                                                     {/* Action Buttons */}
                                                     <div className="flex gap-3">
@@ -2190,15 +2206,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                         )}
 
                         {activeTab === 'tasks' && (
-                            <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-220px)] overflow-hidden rounded-[2rem]">
-                                <TasksTab user={user} initialMode="table" />
-                            </div>
-                        )}
-
-                        {activeTab === 'stats' && (
-                            <div className="w-full h-[calc(100vh-200px)] md:h-[calc(100vh-220px)] overflow-hidden rounded-[2rem]">
-                                <TasksTab user={user} initialMode="cards" />
-                            </div>
+                            <div className="w-full min-h-[calc(100vh-200px)]"><TasksTab /></div>
                         )}
                     </div>
                 </div>

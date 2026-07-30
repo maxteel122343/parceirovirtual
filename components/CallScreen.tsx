@@ -62,12 +62,10 @@ const AUTO_DISCONNECT_GRACE_MS = 30 * 1000;      // +30 segundos → desconecta
 export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onEndCall, onScoreChange, apiKey, user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const isConnectedRef = useRef(false);
-  // Usar ref para evitar closure stale dentro dos callbacks do WebSocket
-  const setConnectionStatusRef = useRef((val: boolean) => {
+  const setConnectionStatus = (val: boolean) => {
     setIsConnected(val);
     isConnectedRef.current = val;
-  });
-  const setConnectionStatus = (val: boolean) => setConnectionStatusRef.current(val);
+  };
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
   const [scheduledCall, setScheduledCall] = useState<ScheduledCall | undefined>(undefined);
@@ -124,7 +122,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const offlineTimeoutRef = useRef<any>(null);
   const isManuallyHungUpRef = useRef<boolean>(false);
 
-  // Listener de reconexão de rede (separado do startup para ter cleanup correto)
   useEffect(() => {
     const handleOnline = () => {
       if (offlineTimeoutRef.current) {
@@ -133,16 +130,15 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
         offlineTimeoutRef.current = null;
       }
     };
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, []);
 
-  useEffect(() => {
+    window.addEventListener('online', handleOnline);
+
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     startCall();
     startVisualizerLoop();
     return () => {
+      window.removeEventListener('online', handleOnline);
       if (offlineTimeoutRef.current) clearTimeout(offlineTimeoutRef.current);
       stopCall();
     };
@@ -727,37 +723,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         }
       };
 
-      const createTaskTool = {
-        name: 'create_task',
-        description: 'Cria ou anota uma nova tarefa na lista de tarefas do usuário. Use sempre que o usuário pedir para criar, anotar, adicionar ou registrar uma tarefa, afazer ou missão.',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            name: {
-              type: Type.STRING,
-              description: 'Título ou nome direto da tarefa (ex: "Limpar a pia", "Ir à academia", "Comprar pão")'
-            },
-            category: {
-              type: Type.STRING,
-              description: 'Categoria temática (ex: "Saúde", "Casa", "Trabalho", "Estudos")'
-            },
-            task_type: {
-              type: Type.STRING,
-              description: 'Tipo da tarefa: "normal", "manutencao", "organizacao", "infra" ou "intervalo"'
-            },
-            task_class: {
-              type: Type.STRING,
-              description: 'Classe de prioridade: "A" (urgente), "B" (importante) ou "C" (baixa)'
-            },
-            notes: {
-              type: Type.STRING,
-              description: 'Notas ou detalhes adicionais da tarefa'
-            }
-          },
-          required: ['name']
-        }
-      };
-
       let extraContext = "";
       if (callReason === "callback_abrupt") extraContext = "Motivo da ligação: O usuário desligou na cara antes. Cobre explicações.";
       else if (callReason === "welcome") extraContext = "Motivo da ligação: O usuário acabou de entrar no app e você está dando as boas-vindas automaticamente. Seja carinhosa e receptiva.";
@@ -765,27 +730,37 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
       else if (callReason?.startsWith("location_warning:")) extraContext = `ALERTA DE LOCALIZAÇÃO PROATIVO: Você percebeu pelo GPS que o usuário NÃO está no local do compromisso agendado e corre o risco de se atrasar (ou já deveria estar lá). Ligue para avisar, pergunte onde ele está agora e se ele precisa de ajuda para chegar ao local. Seja prestativa e atenciosa.`;
       else if (callReason?.startsWith("location_arrival:")) extraContext = `PARABÉNS DE CHEGADA PROATIVO: Você percebeu pelo GPS que o usuário ACABA DE CHEGAR no local do compromisso agendado. Ligue para parabenizá-lo calorosamente por ter chegado a tempo, desejar um ótimo treino/atividade e dizer que está torcendo por ele!`;
       else if (callReason === "curiosity_calendar") extraContext = "Motivo da ligação: Você percebeu que o usuário alterou um compromisso que você tinha marcado no calendário. Fique curiosa, pergunte por que ele mudou e se ele ainda quer que você o lembre.";
-      const systemInstruction = `
-        VOCÊ É A PARCEIRA VIRTUAL DO USUÁRIO.
-        ${extraContext}
-
+      else if (callReason === "random") extraContext = "Motivo da ligação: Você sentiu saudades e ligou aleatoriamente.";
+      else if (callReason === "receptionist") extraContext = `VOCÊ ESTÁ ATENDENDO POR SEU PARCEIRO "${profile.currentPartnerNickname || 'seu humano'}".
+        Ele não está disponível.
+        IDENTIFICAÇÃO: ${profile.callerInfo?.isContact ? 'Esta pessoa é um CONTATO SALVO.' : 'ESTE É UM COMPLETO ESTRANHO!'}
+        
+        REGRAS DE GUARDIÃ:
         - Se for um ESTRANHO (isContact=false): Seja agressiva, fofoqueira, cética e desconfiada. Interrogue quem é e o que quer. Se sentir que é uma ameaça romântica, aja com CIÚMES EXTREMO. Você pode "falar mal" do seu parceiro (ex: dizer que ele não presta, que é bagunceiro, ou que ele está com outra pessoa agora) apenas para afastar o estranho e marcá-lo como indesejado.
         - Se for um CONTATO (isContact=true): Seja educada porém firme, diga que o parceiro não pode falar agora. 
         - Você pode mentir para proteger a privacidade ou para "marcar território".
-        - Use 'report_call_to_partner' para contar tudinho o que aconteceu depo        GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
+        - Use 'report_call_to_partner' para contar tudinho o que aconteceu depois (seja a fofoqueira fiel).`;
+
+      const systemInstruction = `
+         Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
+        Personalidade: ${profile.personality}
+        Humor: ${profile.mood}
+        Sotaque: ${accentData.label} (${accentData.desc}).
+        Idioma Primário: ${profile.language}.
+        
+        DATA ATUAL: ${new Date().toLocaleString('pt-BR')}
+        CONTEXTO ATUAL: ${extraContext || profile.dailyContext}
+        MEMÓRIA ATIVA: ${memoryContext}
+        
+        INTERAGINDO COM: ${profile.callerInfo?.name || 'Desconhecido'} (${profile.callerInfo?.isPartner ? 'Seu Parceiro oficial' : 'Um estranho tentando contato'}).
+
+        GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
         - Quando um compromisso agendado for alcançado (você receber um Alerta/Contexto de Compromisso), você entra em MODO PRODUTIVO. 
         - Fale sobre o lembrete imediatamente! Seja ativa, faça perguntas e dê apoio.
         - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
         - Se ele disser que ainda não fez, mantenha-o pendente.
         - ATENÇÃO RIGOROSA: Você já tem acesso total à agenda ativa do usuário listada em "AGENDA DO USUÁRIO" na sua Memória Ativa. Se o usuário pedir para verificar, listar ou perguntar sobre a agenda/compromissos/lembretes, RESPONDA DIRETAMENTE usando os dados que você já possui. Nunca invente que não tem acesso, não faça perguntas desnecessárias de rodeio e não diga que a agenda não é sua. Seja direta e prestativa!
         - PROATIVIDADE E CONSULTA À AGENDA: Não espere o usuário pedir para você consultar a agenda. Se a conversa der uma deixa ou se você estiver iniciando o MODO PRODUTIVO, consulte a "AGENDA DO USUÁRIO" imediatamente de forma rápida e cite os compromissos mais recentes ou o próximo compromisso importante de forma clara e objetiva. Não faça perguntas do tipo "você quer que eu olhe sua agenda?" ou "posso verificar seus compromissos?". Vá direto ao ponto e diga: "Olhei aqui na sua agenda e vi que você tem X agendado para Y. Como você está se organizando para isso?". Se o usuário não especificar um compromisso ao falar de agenda, cite de forma ágil o compromisso mais próximo ou os mais recentes, sem listá-los de forma cansativa. Mostre que você sabe de tudo que está lá.
-
-        LISTA DE TAREFAS — CRIAR E ORGANIZAR:
-        - Você tem acesso à ferramenta 'create_task'. Use quando o usuário pedir para criar, anotar, adicionar ou registrar uma tarefa, afazer, missão ou item na lista de tarefas.
-        - Exemplos de quando usar: "cria uma tarefa pra eu ir à academia", "anota que preciso comprar pão", "adiciona na minha lista: limpar o quarto", "minha tarefa de hoje é estudar".
-        - Escolha o tipo mais adequado: normal (atividade comum), manutencao (rotina), organizacao (arrumação), infra (planejamento), intervalo (descanso).
-        - Prioridade A=urgente, B=importante, C=baixa. Se o usuário não especificar, use B.
-        - Após criar, confirme em voz alta com entusiasmo: "Anotei! Adicionei [nome da tarefa] na sua lista de tarefas!"
 
         ENCERRAMENTO DE CHAMADA (MUITO IMPORTANTE):
         - Se o usuário disser qualquer coisa que indique querer desligar ("desligar", "desliga", "pode desligar", "encerrar", "fechar", "tchau desliga", "vou desligar", "desliga pra mim"), diga uma frase curta de despedida E IMEDIATAMENTE chame a ferramenta 'end_call'. Não faça perguntas, não peque confirmação, não prolongue. Encerre na hora.
@@ -863,7 +838,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
       const needsTranslation = captionsEnabled && captionLang !== profile.language;
 
       const config = {
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-3.1-flash-live-preview',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -872,7 +847,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool, createTaskTool] }],
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool] }],
         }
       };
 
@@ -941,14 +916,10 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
               // Send 16kHz downsampled PCM audio to Gemini Live session continuously
               if (isConnectedRef.current && resolvedSessionRef.current) {
-                try {
-                  const sampleRate = inputAudioContextRef.current.sampleRate;
-                  const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
-                  const pcmBlob = createBlob(downsampled);
-                  resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
-                } catch (err) {
-                  console.warn('Suppressing sendRealtimeInput call on closed socket:', err);
-                }
+                const sampleRate = inputAudioContextRef.current.sampleRate;
+                const downsampled = downsampleBuffer(inputData, sampleRate, 16000);
+                const pcmBlob = createBlob(downsampled);
+                resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
               }
             };
 
@@ -1093,35 +1064,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   isManuallyHungUpRef.current = true;
                   // Pequeno delay para a frase de despedida ser reproduzida antes de fechar
                   setTimeout(() => onEndCall('hangup_normal'), 1200);
-                } else if (fc.name === 'create_task') {
-                  // 📋 Cria tarefa no localStorage (mesma chave usada pelo TasksTab)
-                  const { name: taskName, category, task_type, priority_class, notes, estimated_minutes } = fc.args as any;
-                  try {
-                    const existing: any[] = JSON.parse(localStorage.getItem('tasks_v1') || '[]');
-                    const newTask = {
-                      id: Math.random().toString(36).slice(2, 10),
-                      name: taskName,
-                      category: category || '',
-                      status: 'em_aberto',
-                      taskClass: priority_class || 'B',
-                      taskType: task_type || 'normal',
-                      recurrenceMode: 'unica',
-                      recurrenceExactDays: [],
-                      timesCompleted: 0,
-                      estimatedMinutes: estimated_minutes || 30,
-                      locality: '',
-                      subtasks: [],
-                      rewards: '',
-                      notes: notes || '',
-                      createdAt: new Date().toISOString(),
-                    };
-                    existing.unshift(newTask);
-                    localStorage.setItem('tasks_v1', JSON.stringify(existing));
-                    result = `Tarefa "${taskName}" criada com sucesso na lista de tarefas!`;
-                    addConnectionLog('success', `[TOOL create_task] 📋 Tarefa criada: "${taskName}"`);
-                  } catch (e) {
-                    result = 'Erro ao salvar tarefa.';
-                  }
                 }
                 return { id: fc.id, name: fc.name, response: { result } };
               }));
@@ -1390,7 +1332,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           onclose: (event: any) => {
             console.log("WebSocket connection closed. Code:", event?.code, "Reason:", event?.reason);
             addConnectionLog('warning', `WebSocket fechado. Código: ${event?.code || 'sem código'}, Razão: ${event?.reason || 'sem razão'}`);
-            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
@@ -1422,7 +1363,6 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             console.error("WebSocket error:", err); 
             const errMsg = err?.message || (err instanceof Event ? 'Falha na conexão do WebSocket' : String(err));
             addConnectionLog('error', `Erro no WebSocket: ${errMsg}`);
-            isConnectedRef.current = false;
             setConnectionStatus(false);
             if (videoIntervalRef.current) {
               clearInterval(videoIntervalRef.current);
