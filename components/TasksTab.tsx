@@ -136,7 +136,7 @@ const InertiaClock: React.FC<{ lastCompletedAt?: string }> = ({ lastCompletedAt 
 
 // ─── Mini Calendar Component for Form ──────────────────────────────────────────
 
-const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) => {
+const MiniCalendar: React.FC<{ scheduledTasks: Task[]; currentForm?: Partial<Task> }> = ({ scheduledTasks, currentForm }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [timelineDay, setTimelineDay] = useState<number | null>(null);
 
@@ -152,10 +152,37 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
   for (let i = 0; i < firstDay; i++) daysArray.push(null);
   for (let d = 1; d <= daysInMonth; d++) daysArray.push(d);
 
+  // Inclui as tarefas salvas + o rascunho da tarefa atual sendo configurada no formulário
+  const allTasksPool = [...scheduledTasks];
+  if (currentForm && currentForm.name) {
+    allTasksPool.push({
+      id: 'draft',
+      name: currentForm.name || 'Nova Tarefa (Rascunho)',
+      category: currentForm.category || '',
+      status: currentForm.status || 'em_aberto',
+      taskClass: currentForm.taskClass || 'B',
+      taskType: currentForm.taskType || 'normal',
+      recurrenceMode: currentForm.recurrenceMode || 'unica',
+      recurrenceExactTime: currentForm.recurrenceExactTime,
+      recurrenceExactDays: currentForm.recurrenceExactDays || [],
+      recurrenceFlexHours: currentForm.recurrenceFlexHours,
+      timesCompleted: 0,
+      estimatedMinutes: currentForm.estimatedMinutes || 15,
+      locality: currentForm.locality || '',
+      subtasks: currentForm.subtasks || [],
+      rewards: currentForm.rewards || '',
+      notes: currentForm.notes || '',
+      createdAt: new Date().toISOString(),
+      startTime: currentForm.startTime,
+      endTime: currentForm.endTime,
+      scheduledAt: currentForm.startTime,
+    });
+  }
+
   // Se o usuário deu duplo clique em um dia, mostra a linha do tempo de 24h (00:00 - 23:00)
   if (timelineDay !== null) {
     const selectedDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(timelineDay).padStart(2, '0')}`;
-    const dayTasks = scheduledTasks.filter(t => {
+    const dayTasks = allTasksPool.filter(t => {
       if (t.startTime && t.startTime.startsWith(selectedDateStr)) return true;
       if (t.scheduledAt && t.scheduledAt.startsWith(selectedDateStr)) return true;
       return false;
@@ -180,7 +207,8 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
         <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-mono text-[10px]">
           {hours.map(h => {
             const tasksAtHour = dayTasks.filter(t => {
-              const taskHour = (t.startTime || t.scheduledAt || '').slice(11, 13) + ':00';
+              const taskStart = t.startTime || t.scheduledAt || '';
+              const taskHour = taskStart.slice(11, 13) + ':00';
               return taskHour === h;
             });
 
@@ -190,8 +218,9 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
                 <div className="flex-1 min-h-[20px]">
                   {tasksAtHour.length > 0 ? (
                     tasksAtHour.map(t => (
-                      <div key={t.id} className="bg-blue-600/20 border border-blue-500/40 px-2 py-0.5 rounded text-blue-200 font-sans font-bold text-[10px] mb-1">
-                        {t.name} ({t.estimatedMinutes}m)
+                      <div key={t.id} className="bg-blue-600/20 border border-blue-500/40 px-2 py-1 rounded text-blue-200 font-sans font-bold text-[10px] mb-1 flex justify-between items-center">
+                        <span>📋 {t.name}</span>
+                        <span className="text-[9px] text-blue-300/60 font-mono">{t.estimatedMinutes}m</span>
                       </div>
                     ))
                   ) : (
@@ -235,19 +264,31 @@ const MiniCalendar: React.FC<{ scheduledTasks: Task[] }> = ({ scheduledTasks }) 
           if (!day) return <div key={idx} className="h-6" />;
           
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          
-          // STRICT CHECKING: Apenas datas reais gravadas possuem os pontos!
-          const fixedTasks = scheduledTasks.filter(t => {
+          const currentCellDate = new Date(year, month, day);
+          const dayOfWeekStr = currentCellDate.getDay().toString();
+
+          // PROJEÇÃO RIGOROSA: Apenas dias estritamente válidos possuem o ponto!
+          const fixedTasks = allTasksPool.filter(t => {
             if (t.recurrenceMode === 'exata') {
-              const dayOfWeek = new Date(year, month, day).getDay().toString();
-              return (t.recurrenceExactDays || []).includes(dayOfWeek);
+              return (t.recurrenceExactDays || []).includes(dayOfWeekStr);
             }
             return (t.startTime && t.startTime.startsWith(dateStr)) || (t.scheduledAt && t.scheduledAt.startsWith(dateStr));
           });
 
-          const flexTasks = scheduledTasks.filter(t => {
+          const flexTasks = allTasksPool.filter(t => {
             if (t.recurrenceMode !== 'flexivel') return false;
-            return (t.startTime && t.startTime.startsWith(dateStr)) || (t.scheduledAt && t.scheduledAt.startsWith(dateStr));
+            
+            // Se tiver data de início, calcula a repetição a cada X horas
+            if (t.startTime) {
+              const startMs = new Date(t.startTime).getTime();
+              const cellMs = currentCellDate.getTime();
+              const flexMs = (t.recurrenceFlexHours || 24) * 60 * 60 * 1000;
+              if (cellMs >= startMs) {
+                const diffMs = cellMs - startMs;
+                return Math.floor(diffMs / flexMs) * flexMs <= diffMs && diffMs < (Math.floor(diffMs / flexMs) + 1) * flexMs;
+              }
+            }
+            return (t.scheduledAt && t.scheduledAt.startsWith(dateStr));
           });
 
           const hasFixed = fixedTasks.length > 0;
@@ -656,8 +697,8 @@ const TaskFormModal: React.FC<TaskFormProps> = ({ initial, allTasks = [], onSave
 
             {/* Lado Direito: Mini Calendário da Agenda para Orientação Visual */}
             <div className="space-y-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-300">📅 Agenda Atual (Orientação)</p>
-              <MiniCalendar scheduledTasks={allTasks} />
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-300">📅 Agenda Atual & Projeção</p>
+              <MiniCalendar scheduledTasks={allTasks} currentForm={form} />
             </div>
           </div>
         </div>
