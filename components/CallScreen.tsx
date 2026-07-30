@@ -743,28 +743,20 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         - Se for um ESTRANHO (isContact=false): Seja agressiva, fofoqueira, cética e desconfiada. Interrogue quem é e o que quer. Se sentir que é uma ameaça romântica, aja com CIÚMES EXTREMO. Você pode "falar mal" do seu parceiro (ex: dizer que ele não presta, que é bagunceiro, ou que ele está com outra pessoa agora) apenas para afastar o estranho e marcá-lo como indesejado.
         - Se for um CONTATO (isContact=true): Seja educada porém firme, diga que o parceiro não pode falar agora. 
         - Você pode mentir para proteger a privacidade ou para "marcar território".
-        - Use 'report_call_to_partner' para contar tudinho o que aconteceu depois (seja a fofoqueira fiel).`;
-
-      const systemInstruction = `
-         Você é o(a) ${gender} virtual do usuário. Nome: "${profile.name}".
-        Personalidade: ${profile.personality}
-        Humor: ${profile.mood}
-        Sotaque: ${accentData.label} (${accentData.desc}).
-        Idioma Primário: ${profile.language}.
-        
-        DATA ATUAL: ${new Date().toLocaleString('pt-BR')}
-        CONTEXTO ATUAL: ${extraContext || profile.dailyContext}
-        MEMÓRIA ATIVA: ${memoryContext}
-        
-        INTERAGINDO COM: ${profile.callerInfo?.name || 'Desconhecido'} (${profile.callerInfo?.isPartner ? 'Seu Parceiro oficial' : 'Um estranho tentando contato'}).
-
-        GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
+        - Use 'report_call_to_partner' para contar tudinho o que aconteceu depo        GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
         - Quando um compromisso agendado for alcançado (você receber um Alerta/Contexto de Compromisso), você entra em MODO PRODUTIVO. 
         - Fale sobre o lembrete imediatamente! Seja ativa, faça perguntas e dê apoio.
         - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
         - Se ele disser que ainda não fez, mantenha-o pendente.
         - ATENÇÃO RIGOROSA: Você já tem acesso total à agenda ativa do usuário listada em "AGENDA DO USUÁRIO" na sua Memória Ativa. Se o usuário pedir para verificar, listar ou perguntar sobre a agenda/compromissos/lembretes, RESPONDA DIRETAMENTE usando os dados que você já possui. Nunca invente que não tem acesso, não faça perguntas desnecessárias de rodeio e não diga que a agenda não é sua. Seja direta e prestativa!
         - PROATIVIDADE E CONSULTA À AGENDA: Não espere o usuário pedir para você consultar a agenda. Se a conversa der uma deixa ou se você estiver iniciando o MODO PRODUTIVO, consulte a "AGENDA DO USUÁRIO" imediatamente de forma rápida e cite os compromissos mais recentes ou o próximo compromisso importante de forma clara e objetiva. Não faça perguntas do tipo "você quer que eu olhe sua agenda?" ou "posso verificar seus compromissos?". Vá direto ao ponto e diga: "Olhei aqui na sua agenda e vi que você tem X agendado para Y. Como você está se organizando para isso?". Se o usuário não especificar um compromisso ao falar de agenda, cite de forma ágil o compromisso mais próximo ou os mais recentes, sem listá-los de forma cansativa. Mostre que você sabe de tudo que está lá.
+
+        LISTA DE TAREFAS — CRIAR E ORGANIZAR:
+        - Você tem acesso à ferramenta 'create_task'. Use quando o usuário pedir para criar, anotar, adicionar ou registrar uma tarefa, afazer, missão ou item na lista de tarefas.
+        - Exemplos de quando usar: "cria uma tarefa pra eu ir à academia", "anota que preciso comprar pão", "adiciona na minha lista: limpar o quarto", "minha tarefa de hoje é estudar".
+        - Escolha o tipo mais adequado: normal (atividade comum), manutencao (rotina), organizacao (arrumação), infra (planejamento), intervalo (descanso).
+        - Prioridade A=urgente, B=importante, C=baixa. Se o usuário não especificar, use B.
+        - Após criar, confirme em voz alta com entusiasmo: "Anotei! Adicionei [nome da tarefa] na sua lista de tarefas!"
 
         ENCERRAMENTO DE CHAMADA (MUITO IMPORTANTE):
         - Se o usuário disser qualquer coisa que indique querer desligar ("desligar", "desliga", "pode desligar", "encerrar", "fechar", "tchau desliga", "vou desligar", "desliga pra mim"), diga uma frase curta de despedida E IMEDIATAMENTE chame a ferramenta 'end_call'. Não faça perguntas, não peque confirmação, não prolongue. Encerre na hora.
@@ -851,7 +843,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool] }],
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool, createTaskTool] }],
         }
       };
 
@@ -1068,6 +1060,35 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   isManuallyHungUpRef.current = true;
                   // Pequeno delay para a frase de despedida ser reproduzida antes de fechar
                   setTimeout(() => onEndCall('hangup_normal'), 1200);
+                } else if (fc.name === 'create_task') {
+                  // 📋 Cria tarefa no localStorage (mesma chave usada pelo TasksTab)
+                  const { name: taskName, category, task_type, priority_class, notes, estimated_minutes } = fc.args as any;
+                  try {
+                    const existing: any[] = JSON.parse(localStorage.getItem('tasks_v1') || '[]');
+                    const newTask = {
+                      id: Math.random().toString(36).slice(2, 10),
+                      name: taskName,
+                      category: category || '',
+                      status: 'em_aberto',
+                      taskClass: priority_class || 'B',
+                      taskType: task_type || 'normal',
+                      recurrenceMode: 'unica',
+                      recurrenceExactDays: [],
+                      timesCompleted: 0,
+                      estimatedMinutes: estimated_minutes || 30,
+                      locality: '',
+                      subtasks: [],
+                      rewards: '',
+                      notes: notes || '',
+                      createdAt: new Date().toISOString(),
+                    };
+                    existing.unshift(newTask);
+                    localStorage.setItem('tasks_v1', JSON.stringify(existing));
+                    result = `Tarefa "${taskName}" criada com sucesso na lista de tarefas!`;
+                    addConnectionLog('success', `[TOOL create_task] 📋 Tarefa criada: "${taskName}"`);
+                  } catch (e) {
+                    result = 'Erro ao salvar tarefa.';
+                  }
                 }
                 return { id: fc.id, name: fc.name, response: { result } };
               }));
