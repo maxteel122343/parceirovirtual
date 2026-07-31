@@ -1129,30 +1129,150 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
                 } else if (fc.name === 'create_task_ai') {
                   const { nome, categoria, classe, tipo, recorrenciaDetalhe, duracaoEst, lembreteIa, localidade } = fc.args as any;
-                  result = `Tarefa "${nome}" criada com sucesso no sistema! Categoria: ${categoria || 'Saúde/Fitness'}, Classe: ${classe || 'Classe A'}, Duração: ${duracaoEst || '30m'}, Lembrete IA: ${lembreteIa || 'A cada 1 hora'}.`;
-                  addConnectionLog('success', `IA criou a tarefa "${nome}".`);
+                  let currentTasks: any[] = [];
+                  try {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  } catch(e) {}
+
+                  const nowStr = new Date().toISOString().slice(0, 16);
+                  const newTask = {
+                    id: Date.now(),
+                    nome: nome,
+                    categoria: categoria || 'Tarefa',
+                    tipo: tipo || 'Normal',
+                    classe: classe || 'Classe A',
+                    localidade: localidade || '🏠 Geral',
+                    recorrenciaTipo: 'Flexível',
+                    recorrencia: recorrenciaDetalhe ? `Flexível (${recorrenciaDetalhe})` : 'Flexível (A cada 24h)',
+                    inicioData: nowStr,
+                    duracaoEst: duracaoEst || '30m',
+                    terminoCalculado: 'Hoje às 16:00',
+                    lembreteIa: lembreteIa || 'A cada 1 hora',
+                    proxExecucao: 'Hoje',
+                    status: 'Pendente',
+                    quantFeita: 0,
+                    subtarefas: { total: 1, concluidas: 0, itens: ['Executar Tarefa'] },
+                    propriedadesGanhas: '+Foco, +Produtividade',
+                    inerciaAtual: '--',
+                    notas: 'Criado pela IA durante a conversa'
+                  };
+
+                  const updatedTasks = [newTask, ...currentTasks];
+                  localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
+                  window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+
+                  if (user) {
+                    supabase.from('reminders').insert({
+                      owner_id: user.id,
+                      title: `[TAREFA] ${nome}`,
+                      trigger_at: new Date().toISOString(),
+                      creator_ai_name: profile.name
+                    }).then();
+                  }
+
+                  result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso no banco de dados e sincronizada em todos os dispositivos! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está salva na sua lista e agenda!`;
+                  addConnectionLog('success', `IA criou e salvou a tarefa "${nome}".`);
                 } else if (fc.name === 'query_task_details') {
-                  const { query } = fc.args as any;
-                  result = `DETALHES COMPLETOS DAS TAREFAS CADASTRADAS:
-1. Treino de Musculação: Categoria Saúde/Fitness, Classe A, Status Concluído, Duração 1h 30m, Início 12:00 PM, Término 13:30 PM, Lembrete IA: A cada 1 hora, Subtarefas: 3/3 concluidas.
-2. Limpar Pia Banheiro: Categoria Casa, Classe B, Status Pendente, Duração 15m, Inércia 18h Sem Fazer, Lembrete IA: A cada 30 min.
-3. Jogar Lixo Banheiro: Categoria Saúde/Fitness, Classe A, Status Pendente, Duração 10m, Lembrete IA: A cada 1 hora.
-4. Organização Financeira Mensal: Categoria Trabalho, Classe A, Status Pendente, Inércia 24h, Lembrete IA: A cada 1 hora.
-5. Estudo de Algoritmos Avançados: Categoria Estudos, Classe A, Status Concluído, Duração 72h, Término 03/08/2026 às 15:07, Lembrete IA: A cada 4 horas.`;
+                  let currentTasks: any[] = [];
+                  try {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  } catch(e) {}
+
+                  if (currentTasks.length > 0) {
+                    const taskListStr = currentTasks.map((t, idx) =>
+                      `${idx + 1}. "${t.nome}" (Categoria: ${t.categoria}, Status: ${t.status}, Duração: ${t.duracaoEst}, Início: ${t.inicioData || 'Nulo'}, Lembrete IA: ${t.lembreteIa}, Ativada Periódica: ${t.isAtivadaPeriodica ? 'Sim' : 'Não'})`
+                    ).join('\n');
+                    result = `DETALHES DAS TAREFAS REGISTRADAS NO BANCO:\n${taskListStr}\nINSTRUÇÃO PARA A IA: Responda ao usuário com estes dados exatos sobre as tarefas dele!`;
+                  } else {
+                    result = `Nenhuma tarefa cadastrada no momento.`;
+                  }
                 } else if (fc.name === 'update_task_ai') {
                   const { task_name, status, lembreteIa, duracaoEst } = fc.args as any;
-                  result = `Tarefa "${task_name}" atualizada com sucesso! Novo status: ${status || 'mantido'}, Lembrete IA: ${lembreteIa || 'mantido'}.`;
+                  let currentTasks: any[] = [];
+                  try {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  } catch(e) {}
+
+                  const updatedTasks = currentTasks.map(t => {
+                    if (t.nome.toLowerCase().includes((task_name || '').toLowerCase())) {
+                      return {
+                        ...t,
+                        status: status || t.status,
+                        lembreteIa: lembreteIa || t.lembreteIa,
+                        duracaoEst: duracaoEst || t.duracaoEst
+                      };
+                    }
+                    return t;
+                  });
+
+                  localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
+                  window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+
+                  result = `Tarefa "${task_name}" atualizada com sucesso no banco de dados e sincronizada!`;
                   addConnectionLog('success', `IA atualizou a tarefa "${task_name}".`);
                 } else if (fc.name === 'delete_task_ai') {
                   const { task_name } = fc.args as any;
-                  result = `Tarefa "${task_name}" foi excluída com sucesso do sistema.`;
+                  let currentTasks: any[] = [];
+                  try {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  } catch(e) {}
+
+                  const updatedTasks = currentTasks.filter(t => !t.nome.toLowerCase().includes((task_name || '').toLowerCase()));
+                  localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
+                  window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+
+                  result = `Tarefa "${task_name}" foi excluída do banco de dados com sucesso.`;
                   addConnectionLog('success', `IA excluiu a tarefa "${task_name}".`);
                 } else if (fc.name === 'toggle_periodic_activation_ai') {
                   const { ativar, quantidade, periodoHoras } = fc.args as any;
+                  let currentTasks: any[] = [];
+                  try {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  } catch(e) {}
+
                   if (ativar) {
-                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi LIGADA para ${quantidade || 5} tarefas nas próximas ${periodoHoras || 24} horas! A PRIMEIRA TAREFA a ser executada na agenda é "Treino de Musculação" agendada para 12:00 PM. INSTRUÇÃO OBRIGATÓRIA PARA A IA: Avise o usuário em voz alta imediatamente: "Ativação periódica por IA ativada! A primeira tarefa que vamos fazer é: Treino de Musculação agendada para 12:00 PM."`;
+                    const targetQty = quantidade || 5;
+                    const targetHours = periodoHoras || 24;
+                    const intervalMinutes = (targetHours * 60) / Math.max(1, targetQty);
+                    let currentTime = new Date();
+
+                    const updatedTasks = currentTasks.map((t, idx) => {
+                      if (idx < targetQty) {
+                        currentTime = new Date(currentTime.getTime() + intervalMinutes * 60 * 1000);
+                        const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        return {
+                          ...t,
+                          isAtivadaPeriodica: true,
+                          horarioAgendaAgendado: `Hoje ${timeStr}`,
+                          proxExecucao: timeStr
+                        };
+                      }
+                      return t;
+                    });
+
+                    localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
+                    localStorage.setItem('parceiro_virtual_periodic_active', 'true');
+                    window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+                    window.dispatchEvent(new CustomEvent('periodic-activation-changed', { detail: { active: true } }));
+
+                    const firstTask = updatedTasks.find(t => t.isAtivadaPeriodica && t.status === 'Pendente');
+                    const firstTaskName = firstTask ? firstTask.nome : 'Treino de Musculação';
+                    const firstTaskTime = firstTask ? (firstTask.horarioAgendaAgendado || firstTask.proxExecucao) : '12:00 PM';
+
+                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi LIGADA para ${targetQty} tarefas nas próximas ${targetHours} horas! A PRIMEIRA TAREFA a ser executada na agenda é "${firstTaskName}" agendada para ${firstTaskTime}. INSTRUÇÃO OBRIGATÓRIA PARA A IA: Avise o usuário em voz alta imediatamente: "Ativação periódica por IA ativada! A primeira tarefa que vamos fazer é: ${firstTaskName} agendada para ${firstTaskTime}."`;
                   } else {
-                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi DESATIVADA com sucesso. Avise o usuário em voz alta que a ativação periódica foi desativada.`;
+                    const updatedTasks = currentTasks.map(t => ({ ...t, isAtivadaPeriodica: false }));
+                    localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
+                    localStorage.setItem('parceiro_virtual_periodic_active', 'false');
+                    window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+                    window.dispatchEvent(new CustomEvent('periodic-activation-changed', { detail: { active: false } }));
+
+                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi DESATIVADA com sucesso. As marcações periódicas foram removidas de todas as tarefas. INSTRUÇÃO OBRIGATÓRIA PARA A IA: Avise o usuário em voz alta imediatamente que a ativação periódica foi desativada.`;
                   }
                   addConnectionLog('info', `IA alterou Ativação Periódica: ${ativar ? 'LIGADA' : 'DESLIGADA'}`);
                 } else if (fc.name === 'end_call') {

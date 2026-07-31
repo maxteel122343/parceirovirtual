@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, PartnerProfile } from '../types';
+import { supabase } from '../supabaseClient';
 
 export interface TaskItem {
   id: number;
@@ -258,9 +259,53 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const [ativarQuantidade, setAtivarQuantidade] = useState<number>(5);
   const [periodoHoras, setPeriodoHoras] = useState<number>(24);
   const [considerarRecorrencia, setConsiderarRecorrencia] = useState<boolean>(true);
-  const [reminderFraction, setReminderFraction] = useState<string>('1/3'); // 1/3 (33%) ou 1/5 (20%)
+  const [reminderFraction, setReminderFraction] = useState<string>('1/3');
   const [postponedQueue, setPostponedQueue] = useState<number[]>([]);
+  const [isPeriodicActivationActive, setIsPeriodicActivationActive] = useState<boolean>(false);
   const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
+
+  // Persistence & Realtime Event Listeners
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTasks(parsed);
+        }
+      }
+      const savedPeriodic = localStorage.getItem('parceiro_virtual_periodic_active');
+      if (savedPeriodic === 'true') {
+        setIsPeriodicActivationActive(true);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    const handleTasksUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setTasks(e.detail);
+      }
+    };
+    const handlePeriodicChanged = (e: any) => {
+      if (e.detail) {
+        setIsPeriodicActivationActive(!!e.detail.active);
+      }
+    };
+    window.addEventListener('tasks-updated', handleTasksUpdated);
+    window.addEventListener('periodic-activation-changed', handlePeriodicChanged);
+    return () => {
+      window.removeEventListener('tasks-updated', handleTasksUpdated);
+      window.removeEventListener('periodic-activation-changed', handlePeriodicChanged);
+    };
+  }, []);
+
+  const updateAndSaveTasks = (newTasks: TaskItem[]) => {
+    setTasks(newTasks);
+    try {
+      localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(newTasks));
+    } catch (e) {}
+  };
 
   // -------------------------------------------------------------
   // MODO "SESSÃO ABERTA" (Modo Combo de Categoria) State
@@ -297,94 +342,103 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   };
 
   // -------------------------------------------------------------
-  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA
+  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA (LIGAR / DESATIVAR)
   // -------------------------------------------------------------
-  const handleExecutarAtivacaoInteligente = () => {
-    const existingAgendaTasks = tasks.filter(t => t.isAtivadaPeriodica || t.horarioAgendaAgendado);
-    const countExisting = existingAgendaTasks.length;
-    const targetTotal = ativarQuantidade;
-    const additionalNeeded = Math.max(0, targetTotal - countExisting);
+  const handleToggleAtivacaoPeriodica = () => {
+    if (isPeriodicActivationActive) {
+      // DESATIVAR ATIVAÇÃO PERIÓDICA
+      const updatedTasks = tasks.map(t => ({ ...t, isAtivadaPeriodica: false, isAdiada: false }));
+      updateAndSaveTasks(updatedTasks);
+      setIsPeriodicActivationActive(false);
+      localStorage.setItem('parceiro_virtual_periodic_active', 'false');
+      window.dispatchEvent(new CustomEvent('periodic-activation-changed', { detail: { active: false } }));
+      
+      setActivationFeedback('🛑 Ativação Periódica por IA DESATIVADA. A marcação foi removida de todas as tarefas.');
+      setTimeout(() => setActivationFeedback(null), 5000);
+    } else {
+      // ATIVAR EXECUÇÃO PERIÓDICA INTELIGENTE
+      const existingAgendaTasks = tasks.filter(t => t.isAtivadaPeriodica || t.horarioAgendaAgendado);
+      const countExisting = existingAgendaTasks.length;
+      const targetTotal = ativarQuantidade;
+      const additionalNeeded = Math.max(0, targetTotal - countExisting);
 
-    const pool = tasks.filter(t => !t.isAtivadaPeriodica);
+      const pool = tasks.filter(t => !t.isAtivadaPeriodica);
 
-    const scoredPool = pool.map(t => {
-      let score = 0;
-      if (t.status === 'Pendente') score += 50;
+      const scoredPool = pool.map(t => {
+        let score = 0;
+        if (t.status === 'Pendente') score += 50;
 
-      if (t.inerciaAtual.includes('36h')) score += 60;
-      else if (t.inerciaAtual.includes('24h')) score += 40;
-      else if (t.inerciaAtual.includes('18h')) score += 30;
+        if (t.inerciaAtual.includes('36h')) score += 60;
+        else if (t.inerciaAtual.includes('24h')) score += 40;
+        else if (t.inerciaAtual.includes('18h')) score += 30;
 
-      if (t.classe === 'Classe A') score += 35;
-      else if (t.classe === 'Classe B') score += 20;
+        if (t.classe === 'Classe A') score += 35;
+        else if (t.classe === 'Classe B') score += 20;
 
-      if (considerarRecorrencia && t.recorrenciaTipo === 'Flexível') score += 25;
+        if (considerarRecorrencia && t.recorrenciaTipo === 'Flexível') score += 25;
 
-      return { task: t, score };
-    });
+        return { task: t, score };
+      });
 
-    scoredPool.sort((a, b) => b.score - a.score);
+      scoredPool.sort((a, b) => b.score - a.score);
 
-    const selectedAdditional = scoredPool.slice(0, additionalNeeded).map(item => item.task.id);
-    const allActivatedIds = new Set([
-      ...existingAgendaTasks.map(t => t.id),
-      ...selectedAdditional
-    ]);
+      const selectedAdditional = scoredPool.slice(0, additionalNeeded).map(item => item.task.id);
+      const allActivatedIds = new Set([
+        ...existingAgendaTasks.map(t => t.id),
+        ...selectedAdditional
+      ]);
 
-    const intervalMinutes = (periodoHoras * 60) / Math.max(1, targetTotal);
-    let currentTime = new Date();
+      const intervalMinutes = (periodoHoras * 60) / Math.max(1, targetTotal);
+      let currentTime = new Date();
 
+      const updatedTasks = tasks.map(t => {
+        if (allActivatedIds.has(t.id)) {
+          currentTime = new Date(currentTime.getTime() + intervalMinutes * 60 * 1000);
+          const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const dateStr = currentTime.getHours() < 24 ? 'Hoje' : 'Amanhã';
+
+          const calculatedReminder = calculateReminderFromFraction(t.duracaoEst, reminderFraction);
+
+          return {
+            ...t,
+            isAtivadaPeriodica: true,
+            isAdiada: false,
+            lembreteIa: calculatedReminder,
+            horarioAgendaAgendado: t.horarioAgendaAgendado || `${dateStr} ${timeStr}`,
+            proxExecucao: t.proxExecucao || timeStr
+          };
+        }
+        return t;
+      });
+
+      updateAndSaveTasks(updatedTasks);
+      setIsPeriodicActivationActive(true);
+      localStorage.setItem('parceiro_virtual_periodic_active', 'true');
+      window.dispatchEvent(new CustomEvent('periodic-activation-changed', { detail: { active: true } }));
+
+      // Primeiríssima tarefa ativada para ser anunciada em voz alta
+      const firstTask = updatedTasks.find(t => t.isAtivadaPeriodica && t.status === 'Pendente');
+      const firstTaskName = firstTask ? firstTask.nome : 'Treino de Musculação';
+      const firstTaskTime = firstTask ? (firstTask.horarioAgendaAgendado || firstTask.proxExecucao) : '12:00 PM';
+
+      setActivationFeedback(
+        `⚡ ATIVADO! A IA selecionou ${targetTotal} tarefas. PRIMEIRA TAREFA: "${firstTaskName}" (${firstTaskTime}).`
+      );
+
+      setTimeout(() => setActivationFeedback(null), 7000);
+    }
+  };
+
+  // Lógica de adiar tarefa (postpone)
+  const handlePostponeTask = (id: number) => {
     const updatedTasks = tasks.map(t => {
-      if (allActivatedIds.has(t.id)) {
-        currentTime = new Date(currentTime.getTime() + intervalMinutes * 60 * 1000);
-        const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const dateStr = currentTime.getHours() < 24 ? 'Hoje' : 'Amanhã';
-
-        // Calculate dynamic fractional AI reminder
-        const calculatedReminder = calculateReminderFromFraction(t.duracaoEst, reminderFraction);
-
-        return {
-          ...t,
-          isAtivadaPeriodica: true,
-          isAdiada: false,
-          lembreteIa: calculatedReminder,
-          horarioAgendaAgendado: t.horarioAgendaAgendado || `${dateStr} ${timeStr}`,
-          proxExecucao: t.proxExecucao || timeStr
-        };
+      if (t.id === id) {
+        return { ...t, isAdiada: true };
       }
       return t;
     });
 
-    setTasks(updatedTasks);
-    setPostponedQueue([]);
-
-    // Find the first task in the activated queue to be announced out loud
-    const firstTask = updatedTasks.find(t => t.isAtivadaPeriodica && t.status === 'Pendente');
-    const firstTaskName = firstTask ? firstTask.nome : 'Nenhuma tarefa pendente';
-    const firstTaskTime = firstTask ? (firstTask.horarioAgendaAgendado || firstTask.proxExecucao) : '';
-
-    setActivationFeedback(
-      `⚡ IA ativou ${targetTotal} tarefas (Lembretes em ${reminderFraction} da duração)! Primeira tarefa a fazer: "${firstTaskName}" (${firstTaskTime}).`
-    );
-
-    setTimeout(() => {
-      setActivationFeedback(null);
-    }, 7000);
-  };
-
-  // -------------------------------------------------------------
-  // LÓGICA DE ADIAR TAREFA (POSTPONE QUEUE)
-  // -------------------------------------------------------------
-  const handlePostponeTask = (id: number) => {
-    setTasks(prev =>
-      prev.map(t => {
-        if (t.id === id) {
-          return { ...t, isAdiada: true };
-        }
-        return t;
-      })
-    );
-
+    updateAndSaveTasks(updatedTasks);
     setPostponedQueue(prev => [...prev.filter(pid => pid !== id), id]);
   };
 
@@ -394,11 +448,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const falhasCount = tasks.filter(t => t.inerciaAtual.includes('24h') || t.inerciaAtual.includes('36h')).length;
   const periodicCount = tasks.filter(t => t.isAtivadaPeriodica).length;
 
-  // -------------------------------------------------------------
-  // FORMULÁRIO DE NOVA TAREFA (MODAL COM MINI CALENDÁRIO INTERATIVO)
-  // -------------------------------------------------------------
+  // Form State
   const [showCreateModal, setShowCreateModal] = useState(false);
-
   const [newTaskForm, setNewTaskForm] = useState({
     nome: '',
     categoria: 'Saúde/Fitness' as 'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa',
@@ -453,7 +504,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       notas: newTaskForm.notas || '--'
     };
 
-    setTasks(prev => [newTask, ...prev]);
+    updateAndSaveTasks([newTask, ...tasks]);
     setShowCreateModal(false);
     setNewTaskForm({
       nome: '',
@@ -474,24 +525,24 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   };
 
   const toggleTaskStatus = (id: number) => {
-    setTasks(prev =>
-      prev.map(t => {
-        if (t.id === id) {
-          const nextStatus = t.status === 'Concluído' ? 'Pendente' : 'Concluído';
-          const nextQuant = nextStatus === 'Concluído' ? t.quantFeita + 1 : Math.max(0, t.quantFeita - 1);
-          if (isComboActive && nextStatus === 'Concluído') {
-            setComboCompletedCount(c => c + 1);
-            const gained = t.propriedadesGanhas.split(',').map(p => p.trim().replace('+', ''));
-            setComboEarnedProperties(ep => [...ep, ...gained]);
-          }
-          return { ...t, status: nextStatus, quantFeita: nextQuant, isAdiada: false };
+    const updatedTasks = tasks.map(t => {
+      if (t.id === id) {
+        const nextStatus = t.status === 'Concluído' ? 'Pendente' : 'Concluído';
+        const nextQuant = nextStatus === 'Concluído' ? t.quantFeita + 1 : Math.max(0, t.quantFeita - 1);
+        if (isComboActive && nextStatus === 'Concluído') {
+          setComboCompletedCount(c => c + 1);
+          const gained = t.propriedadesGanhas.split(',').map(p => p.trim().replace('+', ''));
+          setComboEarnedProperties(ep => [...ep, ...gained]);
         }
-        return t;
-      })
-    );
+        return { ...t, status: nextStatus, quantFeita: nextQuant, isAdiada: false };
+      }
+      return t;
+    });
+
+    updateAndSaveTasks(updatedTasks);
   };
 
-  // Filter & Sorting Logic (Postponed tasks go to the end of the active queue)
+  // Filter & Sorting Logic
   const getFilteredTasks = () => {
     return tasks.filter(t => {
       const matchesSearch =
@@ -507,11 +558,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
       return matchesSearch && matchesCategory && matchesStatus && matchesTipo && matchesPeriodic;
     }).sort((a, b) => {
-      // 1. Non-postponed periodic activated tasks come first
       if (a.isAtivadaPeriodica && !a.isAdiada && (!b.isAtivadaPeriodica || b.isAdiada)) return -1;
       if ((!a.isAtivadaPeriodica || a.isAdiada) && b.isAtivadaPeriodica && !b.isAdiada) return 1;
 
-      // 2. Postponed tasks go to the end of the active queue
       if (a.isAdiada && !b.isAdiada) return 1;
       if (!a.isAdiada && b.isAdiada) return -1;
 
@@ -552,7 +601,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30';
   };
 
-  // Gerador dinâmico de dias do calendário
   const generateCalendarDays = () => {
     const days = [];
     const year = selectedCalendarDate.getFullYear();
@@ -685,7 +733,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       {/* FEED & CONTROL AREA */}
       <div className="p-6 md:p-8 space-y-6">
         
-        {/* BANNER DE CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA */}
+        {/* BANNER DE CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA (COM TOGGLE LIGAR/DESATIVAR) */}
         <div className="p-6 rounded-3xl bg-gradient-to-r from-[#111827] via-[#1f2937]/50 to-[#111827] border border-amber-500/30 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
             <div className="flex items-center gap-2">
@@ -752,11 +800,24 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               </label>
             </div>
 
+            {/* BOTÃO TOGGLE DE ATIVAÇÃO PERIÓDICA */}
             <button
-              onClick={handleExecutarAtivacaoInteligente}
-              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all text-xs flex items-center gap-2"
+              onClick={handleToggleAtivacaoPeriodica}
+              className={`px-6 py-3.5 font-black uppercase tracking-wider rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all text-xs flex items-center gap-2 ${
+                isPeriodicActivationActive
+                  ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-600/30'
+                  : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-amber-500/20'
+              }`}
             >
-              <span>🚀</span> EXECUTAR ATIVAÇÃO INTELIGENTE
+              {isPeriodicActivationActive ? (
+                <>
+                  <span>🛑</span> DESATIVAR ATIVAÇÃO PERIÓDICA
+                </>
+              ) : (
+                <>
+                  <span>🚀</span> EXECUTAR ATIVAÇÃO INTELIGENTE
+                </>
+              )}
             </button>
           </div>
 
