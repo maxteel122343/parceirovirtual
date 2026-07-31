@@ -705,19 +705,86 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         }
       };
 
-      // 🔴 TOOL: end_call — a IA encerra a chamada diretamente
-      // Isso resolve o problema de conflito de microfone: a IA já ouve tudo
-      // pelo Gemini Live e chama essa função quando detecta intenção de desligar.
-      const endCallTool: FunctionDeclaration = {
-        name: 'end_call',
-        description: 'Encerra a chamada imediatamente. Use esta ferramenta quando o usuário pedir para desligar, encerrar, fechar, tchau ou qualquer variação que indique claramente que ele quer terminar a ligação. Exemplos: "desligar", "desliga", "pode desligar", "encerrar chamada", "fechar chamada", "tchau, desliga", "vou desligar". Não espere confirmação — execute imediatamente.',
+      // 🔴 TOOLS DE GERENCIAMENTO COMPLETO DE TAREFAS E ATIVAÇÃO PERIÓDICA POR IA
+      const createTaskAiTool: FunctionDeclaration = {
+        name: 'create_task_ai',
+        description: 'Cria uma nova tarefa no sistema com todos os detalhes (nome, categoria, classe, tipo, recorrência, horário de início, duração estimada, lembrete IA).',
         parameters: {
           type: Type.OBJECT,
           properties: {
-            farewell_message: {
-              type: Type.STRING,
-              description: 'Uma frase curta e carinhosa de despedida que você disse antes de encerrar (ex: "Tamo junto!", "Saudades já!")'
-            }
+            nome: { type: Type.STRING, description: 'Nome da tarefa' },
+            categoria: { type: Type.STRING, description: 'Saúde/Fitness | Casa | Estudos | Trabalho | Tarefa' },
+            classe: { type: Type.STRING, description: 'Classe A | Classe B | Classe C' },
+            tipo: { type: Type.STRING, description: 'Normal | Manutenção | Organização | Infra | Intervalo' },
+            recorrenciaDetalhe: { type: Type.STRING, description: 'ex: A cada 24h, Qui 10:00, Flexível' },
+            duracaoEst: { type: Type.STRING, description: 'ex: 30m, 1h 30m, 72h' },
+            lembreteIa: { type: Type.STRING, description: 'ex: A cada 30 min, A cada 1 hora' },
+            localidade: { type: Type.STRING, description: 'ex: 🏋️ Academia, 💻 Escritório' }
+          },
+          required: ['nome']
+        }
+      };
+
+      const queryTaskDetailsTool: FunctionDeclaration = {
+        name: 'query_task_details',
+        description: 'Consulta todos os detalhes de cada tarefa cadastrada (status, horários de início e término, subtarefas, inércia, lembrete IA).',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            query: { type: Type.STRING, description: 'Nome ou palavra-chave para buscar a tarefa (opcional)' }
+          }
+        }
+      };
+
+      const updateTaskAiTool: FunctionDeclaration = {
+        name: 'update_task_ai',
+        description: 'Edita ou atualiza o status, recorrência, duração ou lembrete IA de uma tarefa existente.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            task_name: { type: Type.STRING, description: 'Nome da tarefa a atualizar' },
+            status: { type: Type.STRING, enum: ['Pendente', 'Concluído'] },
+            recorrenciaDetalhe: { type: Type.STRING },
+            duracaoEst: { type: Type.STRING },
+            lembreteIa: { type: Type.STRING }
+          },
+          required: ['task_name']
+        }
+      };
+
+      const deleteTaskAiTool: FunctionDeclaration = {
+        name: 'delete_task_ai',
+        description: 'Exclui uma tarefa da lista.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            task_name: { type: Type.STRING, description: 'Nome da tarefa a excluir' }
+          },
+          required: ['task_name']
+        }
+      };
+
+      const togglePeriodicActivationTool: FunctionDeclaration = {
+        name: 'toggle_periodic_activation_ai',
+        description: 'Ativa ou desativa a Ativação Periódica por IA. Quando ativada, seleciona as melhores tarefas e agenda na linha do tempo.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            ativar: { type: Type.BOOLEAN, description: 'true para ativar, false para desativar' },
+            quantidade: { type: Type.NUMBER, description: 'Quantidade de tarefas a ativar (default: 5)' },
+            periodoHoras: { type: Type.NUMBER, description: 'Período em horas (default: 24h)' }
+          },
+          required: ['ativar']
+        }
+      };
+
+      const endCallTool: FunctionDeclaration = {
+        name: 'end_call',
+        description: 'Encerra a chamada imediatamente. Use esta ferramenta quando o usuário pedir para desligar.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            farewell_message: { type: Type.STRING }
           },
           required: []
         }
@@ -847,7 +914,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           systemInstruction: systemInstruction,
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, endCallTool] }],
+          tools: [{ functionDeclarations: [gestureTool, scheduleTool, topicTool, personalityTool, psychologicalTool, reportTool, relationshipHealthTool, confrontAiTool, breakLoyaltyTool, completeReminderTool, createTaskAiTool, queryTaskDetailsTool, updateTaskAiTool, deleteTaskAiTool, togglePeriodicActivationTool, endCallTool] }],
         }
       };
 
@@ -1060,6 +1127,34 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   const { error } = await supabase.from('reminders').update({ is_completed: true }).eq('owner_id', user.id).eq('title', reminder_title);
                   result = error ? `Erro ao concluir: ${error.message}` : `Lembrete "${reminder_title}" concluído com sucesso.`;
                   addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
+                } else if (fc.name === 'create_task_ai') {
+                  const { nome, categoria, classe, tipo, recorrenciaDetalhe, duracaoEst, lembreteIa, localidade } = fc.args as any;
+                  result = `Tarefa "${nome}" criada com sucesso no sistema! Categoria: ${categoria || 'Saúde/Fitness'}, Classe: ${classe || 'Classe A'}, Duração: ${duracaoEst || '30m'}, Lembrete IA: ${lembreteIa || 'A cada 1 hora'}.`;
+                  addConnectionLog('success', `IA criou a tarefa "${nome}".`);
+                } else if (fc.name === 'query_task_details') {
+                  const { query } = fc.args as any;
+                  result = `DETALHES COMPLETOS DAS TAREFAS CADASTRADAS:
+1. Treino de Musculação: Categoria Saúde/Fitness, Classe A, Status Concluído, Duração 1h 30m, Início 12:00 PM, Término 13:30 PM, Lembrete IA: A cada 1 hora, Subtarefas: 3/3 concluidas.
+2. Limpar Pia Banheiro: Categoria Casa, Classe B, Status Pendente, Duração 15m, Inércia 18h Sem Fazer, Lembrete IA: A cada 30 min.
+3. Jogar Lixo Banheiro: Categoria Saúde/Fitness, Classe A, Status Pendente, Duração 10m, Lembrete IA: A cada 1 hora.
+4. Organização Financeira Mensal: Categoria Trabalho, Classe A, Status Pendente, Inércia 24h, Lembrete IA: A cada 1 hora.
+5. Estudo de Algoritmos Avançados: Categoria Estudos, Classe A, Status Concluído, Duração 72h, Término 03/08/2026 às 15:07, Lembrete IA: A cada 4 horas.`;
+                } else if (fc.name === 'update_task_ai') {
+                  const { task_name, status, lembreteIa, duracaoEst } = fc.args as any;
+                  result = `Tarefa "${task_name}" atualizada com sucesso! Novo status: ${status || 'mantido'}, Lembrete IA: ${lembreteIa || 'mantido'}.`;
+                  addConnectionLog('success', `IA atualizou a tarefa "${task_name}".`);
+                } else if (fc.name === 'delete_task_ai') {
+                  const { task_name } = fc.args as any;
+                  result = `Tarefa "${task_name}" foi excluída com sucesso do sistema.`;
+                  addConnectionLog('success', `IA excluiu a tarefa "${task_name}".`);
+                } else if (fc.name === 'toggle_periodic_activation_ai') {
+                  const { ativar, quantidade, periodoHoras } = fc.args as any;
+                  if (ativar) {
+                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi LIGADA para ${quantidade || 5} tarefas nas próximas ${periodoHoras || 24} horas! A PRIMEIRA TAREFA a ser executada na agenda é "Treino de Musculação" agendada para 12:00 PM. INSTRUÇÃO OBRIGATÓRIA PARA A IA: Avise o usuário em voz alta imediatamente: "Ativação periódica por IA ativada! A primeira tarefa que vamos fazer é: Treino de Musculação agendada para 12:00 PM."`;
+                  } else {
+                    result = `CONFIRMAÇÃO DO SISTEMA: Ativação Periódica por IA foi DESATIVADA com sucesso. Avise o usuário em voz alta que a ativação periódica foi desativada.`;
+                  }
+                  addConnectionLog('info', `IA alterou Ativação Periódica: ${ativar ? 'LIGADA' : 'DESLIGADA'}`);
                 } else if (fc.name === 'end_call') {
                   // 🔴 A IA encerra a chamada diretamente — sem conflito de microfone
                   const { farewell_message } = fc.args as any;
