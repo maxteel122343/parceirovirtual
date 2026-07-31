@@ -1206,17 +1206,25 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
                   window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
 
-                  // Persist to Supabase for instant Mobile <-> PC Cross-Device Sync
+                  // Sync newly created task by AI directly to the cloud user_tasks table
                   try {
-                    await supabase.from('reminders').insert({
-                      owner_id: user?.id || null,
-                      title: `[TASK_ITEM] ${nome}`,
-                      notes: JSON.stringify(newTask),
-                      trigger_at: new Date().toISOString(),
-                      creator_ai_name: profile?.name || 'IA'
+                    const keys = Object.keys(localStorage);
+                    let uid = localStorage.getItem('parceiro_user_fp') || 'anon';
+                    for (const key of keys) {
+                      if (key.includes('supabase') && key.includes('auth')) {
+                        const val = JSON.parse(localStorage.getItem(key) || '{}');
+                        if (val?.user?.id) uid = val.user.id;
+                      }
+                    }
+                    supabase.from('user_tasks').upsert({
+                      user_id: uid,
+                      task_name: newTask.nome,
+                      task_data: newTask
+                    }, { onConflict: 'user_id,task_name' }).then(({ error }) => {
+                      if (error) console.error('AI created task sync error:', error.message);
                     });
                   } catch (e) {
-                    console.error('Error persisting task to Supabase:', e);
+                    console.error('Error persisting AI task to Supabase:', e);
                   }
 
                   result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso na nuvem do Supabase e sincronizada no seu computador e celular! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está salva na nuvem e aparecendo na tela!`;
