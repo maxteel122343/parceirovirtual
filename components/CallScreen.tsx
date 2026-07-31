@@ -815,7 +815,11 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         Sotaque: ${accentData.label} (${accentData.desc}).
         Idioma Primário: ${profile.language}.
         
-        DATA ATUAL: ${new Date().toLocaleString('pt-BR')}
+        DATA ATUAL: ${(() => {
+          const tz = localStorage.getItem('user_timezone') || (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(_) { return 'America/Sao_Paulo'; } })();
+          return new Date().toLocaleString('pt-BR', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' });
+        })()}
+        FUSO HORÁRIO DO USUÁRIO: ${localStorage.getItem('user_timezone') || (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(_) { return 'America/Sao_Paulo'; } })()} — IMPORTANTE: TODOS os horários de lembretes, alarmes e compromissos que você marcar devem ser no horário LOCAL DO USUÁRIO (neste fuso acima), nunca no horário do servidor.
         CONTEXTO ATUAL: ${extraContext || profile.dailyContext}
         MEMÓRIA ATIVA: ${memoryContext}
         

@@ -120,6 +120,17 @@ function App() {
       }
     });
 
+    // Detect and persist user timezone on every app load
+    // Works in browser AND native app (React Native has Intl support)
+    try {
+      const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detectedTz) {
+        localStorage.setItem('user_timezone', detectedTz);
+      }
+    } catch (_) {
+      // Fallback: keep whatever was previously stored
+    }
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -151,6 +162,18 @@ function App() {
               settings.ai_number = data.ai_number || '';
               if (settings.captionsEnabled === undefined) settings.captionsEnabled = false;
               if (settings.captionLanguage === undefined) settings.captionLanguage = settings.language || PlatformLanguage.PT;
+
+              // Restore saved timezone from profile (cross-device sync)
+              // If profile has a saved timezone, update localStorage so CallScreen can use it
+              if (settings.userTimezone) {
+                localStorage.setItem('user_timezone', settings.userTimezone);
+              } else {
+                // First time: save detected timezone into profile
+                const detectedTz = localStorage.getItem('user_timezone') ||
+                  (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(_) { return 'America/Sao_Paulo'; } })();
+                settings.userTimezone = detectedTz;
+                localStorage.setItem('user_timezone', detectedTz);
+              }
 
               setProfile(() => ({ ...DEFAULT_PROFILE, ...settings }));
             }
