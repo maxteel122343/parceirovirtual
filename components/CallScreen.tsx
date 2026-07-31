@@ -1063,6 +1063,27 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             }
 
             if (message.toolCall) {
+              const getAuthoritativeUserId = (): string => {
+                if (user?.id) return user.id;
+                if (user?.email) return user.email;
+                try {
+                  const keys = Object.keys(localStorage);
+                  for (const key of keys) {
+                    if (key.includes('supabase') && key.includes('auth')) {
+                      const val = JSON.parse(localStorage.getItem(key) || '{}');
+                      if (val?.user?.id) return val.user.id;
+                      if (val?.user?.email) return val.user.email;
+                    }
+                  }
+                } catch (_) {}
+                let fp = localStorage.getItem('parceiro_user_fp');
+                if (!fp) {
+                  fp = 'anon_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+                  localStorage.setItem('parceiro_user_fp', fp);
+                }
+                return fp;
+              };
+
               const responses = await Promise.all(message.toolCall.functionCalls.map(async fc => {
                 let result = "ok";
                 if (fc.name === 'trigger_gesture_feedback') {
@@ -1232,17 +1253,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
                   // Sync newly created task by AI directly to the cloud user_tasks table
                   try {
-                    const uid = user?.id || (() => {
-                      const keys = Object.keys(localStorage);
-                      let id = localStorage.getItem('parceiro_user_fp') || 'anon';
-                      for (const key of keys) {
-                        if (key.includes('supabase') && key.includes('auth')) {
-                          const val = JSON.parse(localStorage.getItem(key) || '{}');
-                          if (val?.user?.id) id = val.user.id;
-                        }
-                      }
-                      return id;
-                    })();
+                    const uid = getAuthoritativeUserId();
                     supabase.from('user_tasks').upsert({
                       user_id: uid,
                       task_name: newTask.nome,
@@ -1258,17 +1269,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   addConnectionLog('success', `IA criou e salvou a tarefa "${nome}" na nuvem.`);
                 } else if (fc.name === 'query_task_details') {
                   let currentTasks: any[] = [];
-                  const uid = user?.id || (() => {
-                    const keys = Object.keys(localStorage);
-                    let id = localStorage.getItem('parceiro_user_fp') || 'anon';
-                    for (const key of keys) {
-                      if (key.includes('supabase') && key.includes('auth')) {
-                        const val = JSON.parse(localStorage.getItem(key) || '{}');
-                        if (val?.user?.id) id = val.user.id;
-                      }
-                    }
-                    return id;
-                  })();
+                  const uid = getAuthoritativeUserId();
 
                   // Fetch from Supabase synchronously/asynchronously inside the promise
                   try {
@@ -1322,17 +1323,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   // Sync single updated task to the cloud user_tasks table
                   if (updatedTargetTask) {
                     try {
-                      const uid = user?.id || (() => {
-                        const keys = Object.keys(localStorage);
-                        let id = localStorage.getItem('parceiro_user_fp') || 'anon';
-                        for (const key of keys) {
-                          if (key.includes('supabase') && key.includes('auth')) {
-                            const val = JSON.parse(localStorage.getItem(key) || '{}');
-                            if (val?.user?.id) id = val.user.id;
-                          }
-                        }
-                        return id;
-                      })();
+                      const uid = getAuthoritativeUserId();
 
                       supabase.from('user_tasks').upsert({
                         user_id: uid,
