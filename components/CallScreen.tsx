@@ -1034,11 +1034,27 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                 }
               }
 
-              // Send 16kHz downsampled PCM audio to Gemini Live session continuously
+              // Send 16kHz downsampled PCM audio to Gemini Live session
+              // Otimização de Silêncio (VAD) para evitar estouro de buffer no celular:
+              // Se o usuário estiver em silêncio absoluto (rms < 0.002), não enviamos áudio de forma contínua, 
+              // apenas enviamos um pacote a cada 1.5 segundos (cerca de 12 pacotes de silêncio) como keep-alive.
               if (isConnectedRef.current && resolvedSessionRef.current && inputAudioContextRef.current) {
                 try {
-                  const pcmBlob = createBlob(inputData);
-                  resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                  const isSilence = rms < 0.002;
+                  if (!isSilence) {
+                    // Usuário falando: transmite áudio continuamente
+                    const pcmBlob = createBlob(inputData);
+                    resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                  } else {
+                    // Silêncio: envia keep-alive a cada 1.5 segundos (aproximadamente 12 iterações do script processor a 128ms)
+                    if (!window.silenceCounter) window.silenceCounter = 0;
+                    window.silenceCounter++;
+                    if (window.silenceCounter >= 12) {
+                      window.silenceCounter = 0;
+                      const pcmBlob = createBlob(inputData);
+                      resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
+                    }
+                  }
                 } catch (err) {
                   // WebSocket is closing or closed - ignore silently
                 }
