@@ -764,37 +764,14 @@ function App() {
           }
         };
 
-        // Current time timestamp adjusted to selected timezone
-        const userLocalTime = (() => {
-          const now = new Date();
-          const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: tz,
-            year: 'numeric', month: 'numeric', day: 'numeric',
-            hour: 'numeric', minute: 'numeric', second: 'numeric',
-            hour12: false
-          });
-          const parts = formatter.formatToParts(now);
-          const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-          return new Date(
-            Number(partMap.year),
-            Number(partMap.month) - 1,
-            Number(partMap.day),
-            Number(partMap.hour),
-            Number(partMap.minute),
-            Number(partMap.second)
-          ).getTime();
-        })();
-
+        // Current time timestamp (absolute universe epoch milliseconds)
+        const userLocalTime = Date.now();
+        
         for (const task of tasksList) {
           if (!task.inicioData || task.status === 'Concluído') continue;
 
-          // Parse task start time components
-          const taskStartTime = (() => {
-            const [datePart, timePart] = task.inicioData.split('T');
-            const [year, month, day] = datePart.split('-').map(Number);
-            const [hour, minute] = timePart.split(':').map(Number);
-            return new Date(year, month - 1, day, hour, minute).getTime();
-          })();
+          // Parse task start time to absolute timestamp in configured timezone
+          const taskStartTime = getTimestampInTz(task.inicioData);
           const durationMinutes = parseDurationToMinutes(task.duracaoEst);
           const taskEndTime = taskStartTime + durationMinutes * 60 * 1000;
 
