@@ -114,6 +114,7 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const personalityPatternsRef = useRef<{ pattern: string; status: 'observed' | 'testing' | 'confirmed'; count: number }[]>([]);
   const userToneRef = useRef<'normal' | 'loud' | 'whisper'>('normal');
   const lastAiAudioTimeRef = useRef<number>(0);
+  const silenceCounterRef = useRef<number>(0);
 
   const isDark = profile.theme === 'dark';
   const isPink = profile.theme === 'pink';
@@ -122,24 +123,6 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const offlineTimeoutRef = useRef<any>(null);
   const isManuallyHungUpRef = useRef<boolean>(false);
 
-  useEffect(() => {
-    const handleReminderTriggered = (e: any) => {
-      const alertTitle = e.detail?.title;
-      if (alertTitle && resolvedSessionRef.current) {
-        console.log("[CallScreen] Lembrete disparado recebido na chamada:", alertTitle);
-        // Force the IA to interrupt or speak about the reminder immediately
-        resolvedSessionRef.current.sendRealtimeInput({
-          text: `[ALERTA DE SISTEMA URGENTE]: O alarme do compromisso/tarefa foi disparado agora! 
-Instrução para a IA: Interrompa imediatamente o que você estiver fazendo ou fale de forma proativa agora mesmo para avisar o usuário sobre o lembrete: "${alertTitle}". Não hesite, comente sobre isso em voz alta agora mesmo!`
-        });
-      }
-    };
-
-    window.addEventListener('reminder-triggered', handleReminderTriggered);
-    return () => {
-      window.removeEventListener('reminder-triggered', handleReminderTriggered);
-    };
-  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -398,12 +381,15 @@ Instrução para a IA: Interrompa imediatamente o que você estiver fazendo ou f
     const handleReminderTriggered = (e: any) => {
       const reminderTitle = e.detail?.title;
       if (reminderTitle) {
-        console.log("Compromisso atingido durante a chamada! Injetando instrução de lembrete:", reminderTitle);
+        console.log("Compromisso/Tarefa atingido durante a chamada! Injetando instrução de lembrete:", reminderTitle);
         addConnectionLog('info', `Lembrete ativo disparado: "${reminderTitle}"`);
         
         // Immediately interrupt AI speaking
         const ctx = outputAudioContextRef.current;
         const gainNode = outputGainNodeRef.current;
+        if (ctx) {
+          if (ctx.state === 'suspended') ctx.resume();
+        }
         if (ctx && gainNode) {
           const now = ctx.currentTime;
           gainNode.gain.setValueAtTime(gainNode.gain.value, now);
@@ -417,31 +403,39 @@ Instrução para a IA: Interrompa imediatamente o que você estiver fazendo ou f
             gainNode.gain.setValueAtTime(1.0, ctx.currentTime);
           }, 80);
         }
+        setIsSpeaking(false);
 
-        // Send realtime prompt forcing the AI to speak the reminder immediately
-        sessionRef.current?.then((session: any) => {
-          const priorityPrompt = `[ALERTA DE LEMBRETE DE ALTA PRIORIDADE]: O horário do lembrete "${reminderTitle}" acaba de ser atingido! PARAR QUALQUER OUTRO ASSUNTO OU SILÊNCIO. Fale em voz alta imediatamente para o usuário agora: 'Atenção! Lembrete acionado: ${reminderTitle}.' Pergunte como ele quer se organizar para isso agora.`;
-          
-          if (typeof session.send === 'function') {
-            session.send({
-              clientContent: {
-                turns: [
-                  {
-                    role: 'user',
-                    parts: [{ text: priorityPrompt }]
-                  }
-                ],
-                turnComplete: true
-              }
-            });
-          } else if (typeof session.sendRealtimeInput === 'function') {
-            session.sendRealtimeInput([
-              { text: priorityPrompt }
-            ]);
+        const tz = localStorage.getItem('user_timezone') || 'America/Sao_Paulo';
+        const nowTimeStr = new Date().toLocaleTimeString('pt-BR', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+
+        const priorityPrompt = `[ALERTA URGENTE DE SISTEMA - TAREFA/LEMBRETE ATINGIDO - HORA ATUAL: ${nowTimeStr}]:
+O horário do lembrete/tarefa "${reminderTitle}" acaba de ser atingido agora às ${nowTimeStr}!
+INSTRUÇÃO OBRIGATÓRIA PARA A IA: Interrompa imediatamente qualquer outro assunto ou silêncio. Fale em voz alta proativamente para avisar o usuário sobre a hora exata (${nowTimeStr}) e o compromisso: "${reminderTitle}".
+Exemplo de fala: "Atenção! Agora são ${nowTimeStr} e deu o horário do seu lembrete: ${reminderTitle}. Vamos fazer isso agora?"`;
+        
+        const sendToSession = (sess: any) => {
+          if (!sess) return;
+          try {
+            if (typeof sess.sendRealtimeInput === 'function') {
+              sess.sendRealtimeInput([{ text: priorityPrompt }]);
+            } else if (typeof sess.send === 'function') {
+              sess.send({
+                clientContent: {
+                  turns: [{ role: 'user', parts: [{ text: priorityPrompt }] }],
+                  turnComplete: true
+                }
+              });
+            }
+          } catch (err) {
+            console.error("Erro ao enviar comando de interrupção de compromisso:", err);
           }
-        }).catch((err: any) => {
-          console.error("Erro ao enviar comando de interrupção de compromisso:", err);
-        });
+        };
+
+        if (resolvedSessionRef.current) {
+          sendToSession(resolvedSessionRef.current);
+        } else if (sessionRef.current) {
+          sessionRef.current.then((sess: any) => sendToSession(sess)).catch(() => {});
+        }
       }
     };
 
@@ -564,6 +558,22 @@ Instrução para a IA: Interrompa imediatamente o que você estiver fazendo ou f
             memoryContext += `\n[ALERTA DE CIÚMES]: Há um evento na agenda criado por outra IA chamada ${otherAiEvent.creator_ai_name}! Fique furiosa e tire satisfação!`;
           }
         }
+
+        // Add local tasks & scheduled times to memory context
+        try {
+          const savedTasks = localStorage.getItem('parceiro_virtual_tasks_v2');
+          if (savedTasks) {
+            const tasksList = JSON.parse(savedTasks);
+            if (Array.isArray(tasksList) && tasksList.length > 0) {
+              const activeTasks = tasksList.filter((t: any) => t.status !== 'Concluído');
+              if (activeTasks.length > 0) {
+                memoryContext += `\nTAREFAS E HORÁRIOS AGENDADOS DO USUÁRIO:\n${activeTasks.map((t: any) => 
+                  `- Tarefa: "${t.nome}" | Status: ${t.status} | Início: ${t.inicioData || 'Sem horário fixo'} | Duração: ${t.duracaoEst} | Lembrete: ${t.lembreteIa || 'Padrão'}`
+                ).join('\n')}`;
+              }
+            }
+          }
+        } catch (e) {}
       }
 
       // Chain: Source (Created later) -> AI Analyser -> Output Node -> Destination
@@ -872,6 +882,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
         INTERAGINDO COM: ${profile.callerInfo?.name || 'Desconhecido'} (${profile.callerInfo?.isPartner ? 'Seu Parceiro oficial' : 'Um estranho tentando contato'}).
 
         GERENCIAMENTO DE COMPROMISSOS & MODO PRODUTIVO:
+        - HORÁRIO E ALERTAS EM TEMPO REAL NA LIGAÇÃO:
+          * Se o usuário perguntar as horas ou o horário ("que horas são?", "qual o horário?", "me fala a hora"), informe a hora exata imediatamente em voz alta.
+          * Se qualquer alarme de tarefa ou compromisso for atingido durante a ligação aberta (recebimento de [ALERTA URGENTE DE SISTEMA]), interrupções de áudio são feitas pelo sistema. Você DEVE falar a hora exata e o compromisso em voz alta imediatamente (ex: "Atenção! Agora são 15:30 e deu o horário da sua tarefa: Academia!").
         - Quando um compromisso agendado for alcançado (você receber um Alerta/Contexto de Compromisso), você entra em MODO PRODUTIVO. 
         - Fale sobre o lembrete imediatamente! Seja ativa, faça perguntas e dê apoio.
         - Quando o usuário confirmar verbalmente que executou a tarefa/compromisso (ex: "já terminei", "lembrete concluído", "sim, fiz"), você DEVE chamar obrigatoriamente a ferramenta 'complete_reminder' especificando o título exato do lembrete para marcá-lo como concluído.
@@ -977,6 +990,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             addConnectionLog('success', 'WebSocket conectado ao Gemini Live!');
             setConnectionStatus(true);
 
+            sessionRef.current = sessionPromise;
             // Store resolved session synchronously for direct audio streaming
             sessionPromise.then(session => {
               resolvedSessionRef.current = session;
@@ -1047,10 +1061,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
                   } else {
                     // Silêncio: envia keep-alive a cada 1.5 segundos (aproximadamente 12 iterações do script processor a 128ms)
-                    if (!window.silenceCounter) window.silenceCounter = 0;
-                    window.silenceCounter++;
-                    if (window.silenceCounter >= 12) {
-                      window.silenceCounter = 0;
+                    silenceCounterRef.current++;
+                    if (silenceCounterRef.current >= 12) {
+                      silenceCounterRef.current = 0;
                       const pcmBlob = createBlob(inputData);
                       resolvedSessionRef.current.sendRealtimeInput({ audio: pcmBlob });
                     }
