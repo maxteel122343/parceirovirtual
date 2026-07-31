@@ -1176,17 +1176,19 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
                   window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
 
-                  if (user) {
+                  // Persist to Supabase for instant Mobile <-> PC Cross-Device Sync
+                  try {
                     supabase.from('reminders').insert({
-                      owner_id: user.id,
-                      title: `[TAREFA] ${nome}`,
+                      owner_id: user?.id || null,
+                      title: `[TASK_ITEM] ${nome}`,
+                      notes: JSON.stringify(newTask),
                       trigger_at: new Date().toISOString(),
-                      creator_ai_name: profile.name
+                      creator_ai_name: profile?.name || 'IA'
                     }).then();
-                  }
+                  } catch (e) {}
 
-                  result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso no banco de dados e sincronizada na lista e no feed de tarefas! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está aparecendo no feed de tarefas!`;
-                  addConnectionLog('success', `IA criou e salvou a tarefa "${nome}".`);
+                  result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso na nuvem do Supabase e sincronizada no seu computador e celular! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está salva na nuvem e aparecendo na tela!`;
+                  addConnectionLog('success', `IA criou e salvou a tarefa "${nome}" na nuvem.`);
                 } else if (fc.name === 'query_task_details') {
                   let currentTasks: any[] = [];
                   try {

@@ -239,7 +239,7 @@ interface TasksTabProps {
   isDark?: boolean;
 }
 
-export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
+export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
   const [viewMode, setViewMode] = useState<'PLANILHA' | 'CARDS'>('CARDS');
   
@@ -261,6 +261,45 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const [postponedQueue, setPostponedQueue] = useState<number[]>([]);
   const [isPeriodicActivationActive, setIsPeriodicActivationActive] = useState<boolean>(false);
   const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
+
+  // Supabase Cloud Sync logic (Mobile <-> PC Realtime Sync)
+  const syncTasksWithCloud = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('*')
+        .like('title', '[TASK_ITEM]%');
+
+      if (!error && data && data.length > 0) {
+        const cloudTasks: TaskItem[] = [];
+        data.forEach(item => {
+          if (item.notes) {
+            try {
+              const parsedTask = JSON.parse(item.notes);
+              if (parsedTask && parsedTask.nome) {
+                cloudTasks.push(parsedTask);
+              }
+            } catch (e) {}
+          }
+        });
+
+        if (cloudTasks.length > 0) {
+          setTasks(prev => {
+            const existingIds = new Set(prev.map(t => t.id));
+            const existingNames = new Set(prev.map(t => t.nome.toLowerCase()));
+            const newAdditions = cloudTasks.filter(ct => !existingIds.has(ct.id) && !existingNames.has(ct.nome.toLowerCase()));
+            
+            if (newAdditions.length > 0) {
+              const merged = [...newAdditions, ...prev];
+              localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(merged));
+              return merged;
+            }
+            return prev;
+          });
+        }
+      }
+    } catch (e) {}
+  };
 
   // Persistence & Realtime Event Listeners
   useEffect(() => {
@@ -284,6 +323,18 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         setIsPeriodicActivationActive(false);
       }
     } catch (e) {}
+
+    // Cloud initial sync + realtime Postgres changes listener
+    syncTasksWithCloud();
+    const channel = supabase.channel('tasks_realtime_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reminders' }, () => {
+        syncTasksWithCloud();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -510,6 +561,17 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     };
 
     updateAndSaveTasks([newTask, ...tasks]);
+
+    // Save to Supabase cloud
+    try {
+      supabase.from('reminders').insert({
+        owner_id: user?.id || null,
+        title: `[TASK_ITEM] ${newTask.nome}`,
+        notes: JSON.stringify(newTask),
+        trigger_at: new Date().toISOString()
+      }).then();
+    } catch (e) {}
+
     setShowCreateModal(false);
     setNewTaskForm({
       nome: '',
