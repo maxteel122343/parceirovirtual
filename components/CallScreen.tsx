@@ -123,6 +123,25 @@ export const CallScreen: React.FC<CallScreenProps> = ({ profile, callReason, onE
   const isManuallyHungUpRef = useRef<boolean>(false);
 
   useEffect(() => {
+    const handleReminderTriggered = (e: any) => {
+      const alertTitle = e.detail?.title;
+      if (alertTitle && resolvedSessionRef.current) {
+        console.log("[CallScreen] Lembrete disparado recebido na chamada:", alertTitle);
+        // Force the IA to interrupt or speak about the reminder immediately
+        resolvedSessionRef.current.sendRealtimeInput({
+          text: `[ALERTA DE SISTEMA URGENTE]: O alarme do compromisso/tarefa foi disparado agora! 
+Instrução para a IA: Interrompa imediatamente o que você estiver fazendo ou fale de forma proativa agora mesmo para avisar o usuário sobre o lembrete: "${alertTitle}". Não hesite, comente sobre isso em voz alta agora mesmo!`
+        });
+      }
+    };
+
+    window.addEventListener('reminder-triggered', handleReminderTriggered);
+    return () => {
+      window.removeEventListener('reminder-triggered', handleReminderTriggered);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleOnline = () => {
       if (offlineTimeoutRef.current) {
         console.log("[Network] Conexão restabelecida antes dos 5 minutos. Cancelando reconexão forçada.");

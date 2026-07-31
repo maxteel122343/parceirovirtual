@@ -813,7 +813,7 @@ function App() {
           // Rule 1 & Rule 2: Início exato
           if (settings.notifyAtStart) {
             const key = `${keyPrefix}start`;
-            if (userLocalTime >= taskStartTime && userLocalTime < taskStartTime + 30000 && !localStorage.getItem(key)) {
+            if (userLocalTime >= taskStartTime && userLocalTime < taskStartTime + 60000 && !localStorage.getItem(key)) {
               localStorage.setItem(key, 'true');
               if (settings.askIfStartedAfterNotify) {
                 triggerProactiveCall(
