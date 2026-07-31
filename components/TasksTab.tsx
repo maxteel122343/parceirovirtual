@@ -263,6 +263,25 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [isPeriodicActivationActive, setIsPeriodicActivationActive] = useState<boolean>(false);
   const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
 
+  // -------------------------------------------------------------
+  // EDIT & DELETE CARD STATE
+  // -------------------------------------------------------------
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
+  const [editForm, setEditForm] = useState<{
+    nome: string;
+    categoria: 'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa';
+    tipo: 'Normal' | 'Manutenção' | 'Organização' | 'Infra' | 'Intervalo' | 'Tarefa';
+    classe: 'Classe A' | 'Classe B' | 'Classe C';
+    localidade: string;
+    inicioNulo: boolean;
+    inicioData: string;
+    duracaoEst: string;
+    lembreteIa: string;
+    subtasksInput: string[];
+    propriedadesGanhas: string;
+    notas: string;
+  } | null>(null);
+
   // Supabase Cloud Sync logic (Mobile <-> PC Realtime Sync & Relogin Persistence)
   const syncTasksWithCloud = async () => {
     setIsSyncing(true);
@@ -289,11 +308,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
         if (cloudTasks.length > 0) {
           setTasks(prev => {
             const taskMap = new Map<string, TaskItem>();
-            // Add cloud tasks first (newest tasks from cloud take priority)
             cloudTasks.forEach(ct => {
               taskMap.set(ct.nome.toLowerCase().trim(), ct);
             });
-            // Preserve local tasks not present in cloud
             prev.forEach(pt => {
               const key = pt.nome.toLowerCase().trim();
               if (!taskMap.has(key)) {
@@ -374,6 +391,97 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     try {
       localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(newTasks));
     } catch (e) {}
+    window.dispatchEvent(new CustomEvent('tasks-updated', { detail: newTasks }));
+  };
+
+  // -------------------------------------------------------------
+  // LÓGICA DE EXCLUSÃO E EDIÇÃO DE CARDS
+  // -------------------------------------------------------------
+  const handleDeleteTask = async (task: TaskItem) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a tarefa "${task.nome}"?`)) return;
+
+    const updatedTasks = tasks.filter(t => t.id !== task.id);
+    updateAndSaveTasks(updatedTasks);
+
+    // Remove from Supabase Cloud
+    try {
+      await supabase
+        .from('reminders')
+        .delete()
+        .eq('title', `[TASK_ITEM] ${task.nome}`);
+    } catch (e) {
+      console.error('Error deleting task from Supabase:', e);
+    }
+  };
+
+  const handleOpenEditModal = (task: TaskItem) => {
+    setEditingTask(task);
+    setEditForm({
+      nome: task.nome,
+      categoria: task.categoria,
+      tipo: task.tipo,
+      classe: task.classe,
+      localidade: task.localidade,
+      inicioNulo: task.inicioData === null,
+      inicioData: task.inicioData || getNowDateTimeLocal(),
+      duracaoEst: task.duracaoEst,
+      lembreteIa: task.lembreteIa,
+      subtasksInput: [...task.subtarefas.itens, '', '', '', ''].slice(0, 5),
+      propriedadesGanhas: task.propriedadesGanhas,
+      notas: task.notas
+    });
+  };
+
+  const handleSaveEditedTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !editForm || !editForm.nome.trim()) return;
+
+    const validSubtasks = editForm.subtasksInput.filter(s => s.trim() !== '');
+    const inicioStr = editForm.inicioNulo ? null : editForm.inicioData;
+    const terminoCalculado = calculateTermino(inicioStr, editForm.duracaoEst);
+
+    const updatedTask: TaskItem = {
+      ...editingTask,
+      nome: editForm.nome,
+      categoria: editForm.categoria,
+      tipo: editForm.tipo,
+      classe: editForm.classe,
+      localidade: editForm.localidade,
+      inicioData: inicioStr,
+      duracaoEst: editForm.duracaoEst || '30m',
+      terminoCalculado: terminoCalculado,
+      lembreteIa: editForm.lembreteIa,
+      proxExecucao: inicioStr ? new Date(inicioStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Indefinido',
+      subtarefas: {
+        total: validSubtasks.length || 1,
+        concluidas: Math.min(editingTask.subtarefas.concluidas, validSubtasks.length || 1),
+        itens: validSubtasks.length ? validSubtasks : ['Executar Tarefa']
+      },
+      propriedadesGanhas: editForm.propriedadesGanhas || '+Foco',
+      notas: editForm.notas || '--'
+    };
+
+    const updatedList = tasks.map(t => (t.id === editingTask.id ? updatedTask : t));
+    updateAndSaveTasks(updatedList);
+
+    // Update in Supabase Cloud
+    try {
+      // First delete old entry if name changed
+      if (editingTask.nome !== updatedTask.nome) {
+        await supabase.from('reminders').delete().eq('title', `[TASK_ITEM] ${editingTask.nome}`);
+      }
+      await supabase.from('reminders').insert({
+        owner_id: user?.id || null,
+        title: `[TASK_ITEM] ${updatedTask.nome}`,
+        notes: JSON.stringify(updatedTask),
+        trigger_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error('Error updating task in Supabase:', e);
+    }
+
+    setEditingTask(null);
+    setEditForm(null);
   };
 
   // -------------------------------------------------------------
@@ -1009,18 +1117,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     : 'bg-[#111827] border-[#1f2937] hover:border-slate-700'
                 }`}
               >
-                {t.isAdiada ? (
-                  <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                    <span>⏩ Tarefa Adiada (Fila Final)</span>
-                  </div>
-                ) : (isPeriodicActivationActive && t.isAtivadaPeriodica) ? (
-                  <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                    <span>⚡ Ativação Periódica</span>
-                  </div>
-                ) : null}
-
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
+                {/* BOTÕES DE AÇÕES NO TOPO DO CARD (EDITAR E EXCLUIR) */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-tight ${getCategoryBadgeClass(t.categoria)}`}>
                       {t.categoria}
                     </span>
@@ -1029,6 +1128,35 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     </span>
                   </div>
 
+                  <div className="flex items-center gap-1.5 z-10">
+                    <button
+                      onClick={() => handleOpenEditModal(t)}
+                      className="p-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 transition-all text-xs"
+                      title="Editar Tarefa"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTask(t)}
+                      className="p-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 transition-all text-xs"
+                      title="Excluir Tarefa"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+
+                {t.isAdiada ? (
+                  <div className="mb-2 inline-flex items-center gap-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest w-fit">
+                    <span>⏩ Tarefa Adiada (Fila Final)</span>
+                  </div>
+                ) : (isPeriodicActivationActive && t.isAtivadaPeriodica) ? (
+                  <div className="mb-2 inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest w-fit">
+                    <span>⚡ Ativação Periódica</span>
+                  </div>
+                ) : null}
+
+                <div>
                   <h3 className="text-base font-black text-white mb-2 leading-snug">{t.nome}</h3>
                   
                   <div className="space-y-1 mb-4 bg-[#0b1120] p-3 rounded-2xl border border-slate-800 text-xs">
@@ -1105,7 +1233,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                   <th className="py-3 px-4 border-r border-slate-700 min-w-[200px]">SUBTAREFAS (Progresso)</th>
                   <th className="py-3 px-4 border-r border-slate-700 min-w-[220px]">PROPRIEDADES GANHAS</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">INÉRCIA ATUAL</th>
-                  <th className="py-3 px-4 min-w-[150px]">NOTAS</th>
+                  <th className="py-3 px-4 border-r border-slate-700 min-w-[150px]">NOTAS</th>
+                  <th className="py-3 px-3 min-w-[100px] text-center">AÇÕES</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-[12px] font-medium">
@@ -1163,7 +1292,25 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     </td>
                     <td className="py-2.5 px-4 border-r border-slate-800 text-emerald-400 font-medium text-[11px]">{t.propriedadesGanhas}</td>
                     <td className="py-2.5 px-3 border-r border-slate-800 text-slate-400 text-[11px]">{t.inerciaAtual}</td>
-                    <td className="py-2.5 px-4 text-slate-300 text-[11px] italic">{t.notas}</td>
+                    <td className="py-2.5 px-4 border-r border-slate-800 text-slate-300 text-[11px] italic">{t.notas}</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleOpenEditModal(t)}
+                          className="p-1 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all text-xs"
+                          title="Editar"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTask(t)}
+                          className="p-1 rounded-lg bg-rose-600/20 text-rose-400 hover:bg-rose-600 hover:text-white transition-all text-xs"
+                          title="Excluir"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1171,6 +1318,234 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
           </div>
         )}
       </div>
+
+      {/* MODAL DE EDIÇÃO DE TAREFA */}
+      {editingTask && editForm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
+              <h2 className="text-xl font-black uppercase italic text-white flex items-center gap-2">
+                <span>✏️</span> Editar Tarefa: {editingTask.nome}
+              </h2>
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setEditForm(null);
+                }}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedTask} className="space-y-6">
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">1. Informações Básicas</h3>
+                
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Nome da Tarefa</label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.nome}
+                    onChange={e => setEditForm({ ...editForm, nome: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Categoria</label>
+                    <select
+                      value={editForm.categoria}
+                      onChange={e => setEditForm({ ...editForm, categoria: e.target.value as any })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="Saúde/Fitness">Saúde/Fitness</option>
+                      <option value="Casa">Casa</option>
+                      <option value="Estudos">Estudos</option>
+                      <option value="Trabalho">Trabalho</option>
+                      <option value="Tarefa">Tarefa</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Prioridade / Classe</label>
+                    <select
+                      value={editForm.classe}
+                      onChange={e => setEditForm({ ...editForm, classe: e.target.value as any })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="Classe A">Classe A</option>
+                      <option value="Classe B">Classe B</option>
+                      <option value="Classe C">Classe C</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Tipo</label>
+                    <select
+                      value={editForm.tipo}
+                      onChange={e => setEditForm({ ...editForm, tipo: e.target.value as any })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="Normal">Normal</option>
+                      <option value="Manutenção">Manutenção</option>
+                      <option value="Organização">Organização</option>
+                      <option value="Infra">Infra</option>
+                      <option value="Intervalo">Intervalo</option>
+                      <option value="Tarefa">Tarefa</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">2. Tempo e Lembrete</h3>
+
+                <div className="space-y-3 bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Horário de Início</label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-amber-400 font-bold">
+                      <input
+                        type="checkbox"
+                        checked={editForm.inicioNulo}
+                        onChange={e => setEditForm({ ...editForm, inicioNulo: e.target.checked })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-amber-500"
+                      />
+                      <span>Início Nulo (Sem Horário Fixo)</span>
+                    </label>
+                  </div>
+
+                  {!editForm.inicioNulo && (
+                    <input
+                      type="datetime-local"
+                      value={editForm.inicioData}
+                      onChange={e => setEditForm({ ...editForm, inicioData: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    />
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Duração Estimada</label>
+                      <input
+                        type="text"
+                        placeholder="ex: 30m, 1h 30m, 72h"
+                        value={editForm.duracaoEst}
+                        onChange={e => setEditForm({ ...editForm, duracaoEst: e.target.value })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Término Calculado (Automático)</label>
+                      <div className="w-full bg-slate-800/90 border border-blue-500/30 rounded-xl px-3 py-2 text-xs text-[#38bdf8] font-bold font-mono">
+                        {calculateTermino(editForm.inicioNulo ? null : editForm.inicioData, editForm.duracaoEst)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                    🤖 Lembrete IA
+                  </label>
+                  <select
+                    value={editForm.lembreteIa}
+                    onChange={e => setEditForm({ ...editForm, lembreteIa: e.target.value })}
+                    className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-2 text-xs text-purple-300 font-bold focus:outline-none focus:border-purple-400"
+                  >
+                    <option value="A cada 15 min">Lembrar a cada 15 minutos</option>
+                    <option value="A cada 30 min">Lembrar a cada 30 minutos</option>
+                    <option value="A cada 1 hora">Lembrar a cada 1 hora</option>
+                    <option value="A cada 2 horas">Lembrar a cada 2 horas</option>
+                    <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
+                    <option value="Desativado">Desativado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">3. Contexto e Subtarefas</h3>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Localidade</label>
+                  <input
+                    type="text"
+                    value={editForm.localidade}
+                    onChange={e => setEditForm({ ...editForm, localidade: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">Subtarefas (até 5)</label>
+                  <div className="space-y-2">
+                    {editForm.subtasksInput.map((sub, idx) => (
+                      <input
+                        key={idx}
+                        type="text"
+                        placeholder={`Subtarefa ${idx + 1}`}
+                        value={sub}
+                        onChange={e => {
+                          const updated = [...editForm.subtasksInput];
+                          updated[idx] = e.target.value;
+                          setEditForm({ ...editForm, subtasksInput: updated });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700/70 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">4. Resultados e Notas</h3>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Propriedades Ganhas</label>
+                  <input
+                    type="text"
+                    value={editForm.propriedadesGanhas}
+                    onChange={e => setEditForm({ ...editForm, propriedadesGanhas: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-emerald-400 font-medium focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Observações / Notas</label>
+                  <textarea
+                    value={editForm.notas}
+                    onChange={e => setEditForm({ ...editForm, notas: e.target.value })}
+                    rows={2}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTask(null);
+                    setEditForm(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-blue-600/30 transition-all"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE CRIAÇÃO DE NOVA TAREFA COM MINI CALENDÁRIO INTERATIVO */}
       {showCreateModal && (
