@@ -717,6 +717,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
             classe: { type: Type.STRING, description: 'Classe A | Classe B | Classe C' },
             tipo: { type: Type.STRING, description: 'Normal | Manutenção | Organização | Infra | Intervalo' },
             recorrenciaDetalhe: { type: Type.STRING, description: 'ex: A cada 24h, Qui 10:00, Flexível' },
+            inicioData: { type: Type.STRING, description: 'Horário de início da tarefa no formato YYYY-MM-DDTHH:mm (obrigatório se o usuário definiu data/hora, ex: 2026-07-31T16:52)' },
             duracaoEst: { type: Type.STRING, description: 'ex: 30m, 1h 30m, 72h' },
             lembreteIa: { type: Type.STRING, description: 'ex: A cada 30 min, A cada 1 hora' },
             localidade: { type: Type.STRING, description: 'ex: 🏋️ Academia, 💻 Escritório' }
@@ -1158,7 +1159,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   result = error ? `Erro ao concluir: ${error.message}` : `Lembrete "${reminder_title}" concluído com sucesso.`;
                   addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
                 } else if (fc.name === 'create_task_ai') {
-                  const { nome, categoria, classe, tipo, recorrenciaDetalhe, duracaoEst, lembreteIa, localidade } = fc.args as any;
+                  const { nome, categoria, classe, tipo, recorrenciaDetalhe, inicioData, duracaoEst, lembreteIa, localidade } = fc.args as any;
                   
                   const getTasksFromStorage = () => {
                     try {
@@ -1168,18 +1169,32 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
                       }
                     } catch(e) {}
-                    return [
-                      { id: 1, nome: 'Treino de Musculação', categoria: 'Saúde/Fitness', tipo: 'Normal', classe: 'Classe A', localidade: '🏋️ Academia', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 24h)', inicioData: new Date().toISOString(), duracaoEst: '1h 30m', terminoCalculado: 'Hoje 13:30', lembreteIa: 'A cada 30 min', proxExecucao: '12:00 PM', status: 'Concluído', quantFeita: 15, subtarefas: { total: 3, concluidas: 3, itens: ['Supino', 'Agachamento'] }, propriedadesGanhas: '+Força Muscular', inerciaAtual: '--', notas: 'Foco', isAtivadaPeriodica: true },
-                      { id: 2, nome: 'Limpar Pia Banheiro', categoria: 'Casa', tipo: 'Manutenção', classe: 'Classe B', localidade: '🚽 Banheiro', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Qui, 10:00)', inicioData: new Date().toISOString(), duracaoEst: '15m', terminoCalculado: 'Hoje 15:45', lembreteIa: 'A cada 5 min', proxExecucao: 'Indefinido', status: 'Pendente', quantFeita: 1, subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Limpeza', inerciaAtual: '18h Sem Fazer', notas: 'Desinfetante', isAtivadaPeriodica: true },
-                      { id: 3, nome: 'Limpar Pia Banheiro', categoria: 'Casa', tipo: 'Normal', classe: 'Classe B', localidade: '🚽 Banheiro', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Qui, 10:00)', inicioData: null, duracaoEst: '15m', terminoCalculado: 'Nulo', lembreteIa: 'A cada 2 horas', proxExecucao: 'Indefinido', status: 'Pendente', quantFeita: 1, subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Resistência', inerciaAtual: '--', notas: 'Foco' },
-                      { id: 4, nome: 'Jogar Lixo Banheiro', categoria: 'Saúde/Fitness', tipo: 'Normal', classe: 'Classe A', localidade: '🏋️ Academia', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 24h)', inicioData: new Date().toISOString(), duracaoEst: '10m', terminoCalculado: 'Hoje 18:10', lembreteIa: 'A cada 3 min', proxExecucao: '12:00 PM', status: 'Pendente', quantFeita: 1, subtarefas: { total: 3, concluidas: 3, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Força', inerciaAtual: '--', notas: '--', isAtivadaPeriodica: true },
-                      { id: 5, nome: 'Estudo de Algoritmos Avançados', categoria: 'Estudos', tipo: 'Normal', classe: 'Classe A', localidade: '💻 Escritório', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 12h)', inicioData: new Date().toISOString(), duracaoEst: '72h', terminoCalculado: 'Segunda 15:00', lembreteIa: 'A cada 24h', proxExecucao: '2:00 PM', status: 'Concluído', quantFeita: 8, subtarefas: { total: 2, concluidas: 2, itens: ['Leetcode'] }, propriedadesGanhas: '+Técnico', inerciaAtual: '--', notas: 'Complexidade' },
-                      { id: 6, nome: 'Organização Financeira Mensal', categoria: 'Trabalho', tipo: 'Organização', classe: 'Classe A', localidade: '💼 Home Office', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Dia 1, 09:00)', inicioData: new Date().toISOString(), duracaoEst: '45m', terminoCalculado: 'Amanhã 09:45', lembreteIa: 'A cada 15 min', proxExecucao: '9:00 AM', status: 'Pendente', quantFeita: 3, subtarefas: { total: 2, concluidas: 0, itens: ['Gastos'] }, propriedadesGanhas: '+Financeira', inerciaAtual: '24h Sem Fazer', notas: 'Relatórios', isAtivadaPeriodica: true }
-                    ];
+                    return [];
                   };
 
                   const currentTasks = getTasksFromStorage();
-                  const nowStr = new Date().toISOString().slice(0, 16);
+                  const finalInicioData = inicioData || new Date().toISOString().slice(0, 16);
+                  
+                  // Helper to calculate End Date & Time from Start Date + Duration
+                  const calculateTermino = (inicioStr: string | null, duracaoStr: string) => {
+                    if (!inicioStr) return 'Nulo (Sem Horário Fixo)';
+                    try {
+                      const date = new Date(inicioStr);
+                      let minutesToAdd = 30;
+                      if (duracaoStr.toLowerCase().includes('h')) {
+                        const hrs = parseInt(duracaoStr.match(/(\d+)\s*h/)?.[1] || '0');
+                        const mins = parseInt(duracaoStr.match(/(\d+)\s*m/)?.[1] || '0');
+                        minutesToAdd = hrs * 60 + mins;
+                      } else if (duracaoStr.toLowerCase().includes('m')) {
+                        minutesToAdd = parseInt(duracaoStr.match(/(\d+)\s*m/)?.[1] || '30');
+                      }
+                      const endDate = new Date(date.getTime() + minutesToAdd * 60 * 1000);
+                      return endDate.toLocaleString('pt-BR');
+                    } catch (_) {
+                      return 'Nulo';
+                    }
+                  };
+
                   const newTask = {
                     id: Date.now(),
                     nome: nome,
@@ -1189,17 +1204,26 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     localidade: localidade || '🏠 Geral',
                     recorrenciaTipo: 'Flexível',
                     recorrencia: recorrenciaDetalhe ? `Flexível (${recorrenciaDetalhe})` : 'Flexível (A cada 24h)',
-                    inicioData: nowStr,
+                    inicioData: finalInicioData,
                     duracaoEst: duracaoEst || '30m',
-                    terminoCalculado: 'Hoje às 16:00',
+                    terminoCalculado: calculateTermino(finalInicioData, duracaoEst || '30m'),
                     lembreteIa: lembreteIa || 'A cada 1 hora',
-                    proxExecucao: 'Hoje',
+                    proxExecucao: finalInicioData ? new Date(finalInicioData).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Indefinido',
                     status: 'Pendente',
                     quantFeita: 0,
                     subtarefas: { total: 1, concluidas: 0, itens: ['Executar Tarefa'] },
                     propriedadesGanhas: '+Foco, +Produtividade',
                     inerciaAtual: '--',
-                    notas: 'Criado pela IA durante a conversa'
+                    notas: 'Criado pela IA durante a conversa',
+                    reminderSettings: {
+                      notifyAtStart: true,
+                      askIfStartedAfterNotify: true,
+                      remindEveryFraction: true,
+                      askProgressEveryFraction: true,
+                      askIfFinishedLastFraction: true,
+                      remindAfterEstimated: false,
+                      notifyBeforeStartMinutes: null
+                    }
                   };
 
                   const updatedTasks = [newTask, ...currentTasks];
