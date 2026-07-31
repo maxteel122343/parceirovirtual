@@ -1760,6 +1760,91 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                                 ))}
                                             </div>
                                         </div>
+
+                                        {/* Timezone Selector */}
+                                        <div className={`pt-8 border-t border-dashed ${isDark ? 'border-white/10' : 'border-black/10'}`}>
+                                            <p className="text-[10px] font-bold uppercase tracking-widest opacity-20 mb-2 ml-2">⏰ Fuso Horário</p>
+                                            <p className="text-[9px] font-medium opacity-30 ml-2 mb-5 italic">
+                                                Detectado automaticamente. Altere se necessário para que a IA marque lembretes no horário correto.
+                                            </p>
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                                                <div className="relative flex-1 w-full">
+                                                    <select
+                                                        id="timezone-select"
+                                                        value={profile.userTimezone || localStorage.getItem('user_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone}
+                                                        onChange={e => {
+                                                            const tz = e.target.value;
+                                                            localStorage.setItem('user_timezone', tz);
+                                                            updateProfileAndSync(prev => ({ ...prev, userTimezone: tz }));
+                                                        }}
+                                                        className={`w-full appearance-none pl-5 pr-10 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest border transition-all outline-none focus:ring-2 focus:ring-blue-500/40 ${isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-black/5 border-black/10 text-black'}`}
+                                                    >
+                                                        <optgroup label="🇧🇷 Brasil">
+                                                            <option value="America/Sao_Paulo">América/São Paulo (BRT — UTC-3)</option>
+                                                            <option value="America/Manaus">América/Manaus (AMT — UTC-4)</option>
+                                                            <option value="America/Belem">América/Belém (BRT — UTC-3)</option>
+                                                            <option value="America/Fortaleza">América/Fortaleza (BRT — UTC-3)</option>
+                                                            <option value="America/Recife">América/Recife (BRT — UTC-3)</option>
+                                                            <option value="America/Porto_Velho">América/Porto Velho (AMT — UTC-4)</option>
+                                                            <option value="America/Rio_Branco">América/Rio Branco (ACT — UTC-5)</option>
+                                                            <option value="America/Noronha">América/Fernando de Noronha (FNT — UTC-2)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌎 América do Norte">
+                                                            <option value="America/New_York">América/Nova York (EST — UTC-5)</option>
+                                                            <option value="America/Chicago">América/Chicago (CST — UTC-6)</option>
+                                                            <option value="America/Denver">América/Denver (MST — UTC-7)</option>
+                                                            <option value="America/Los_Angeles">América/Los Angeles (PST — UTC-8)</option>
+                                                            <option value="America/Toronto">América/Toronto (EST — UTC-5)</option>
+                                                            <option value="America/Mexico_City">América/Cidade do México (CST — UTC-6)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌎 América do Sul">
+                                                            <option value="America/Argentina/Buenos_Aires">América/Buenos Aires (ART — UTC-3)</option>
+                                                            <option value="America/Santiago">América/Santiago (CLT — UTC-3)</option>
+                                                            <option value="America/Lima">América/Lima (PET — UTC-5)</option>
+                                                            <option value="America/Bogota">América/Bogotá (COT — UTC-5)</option>
+                                                            <option value="America/Caracas">América/Caracas (VET — UTC-4)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌍 Europa">
+                                                            <option value="Europe/Lisbon">Europa/Lisboa (WET — UTC+0)</option>
+                                                            <option value="Europe/London">Europa/Londres (GMT — UTC+0)</option>
+                                                            <option value="Europe/Paris">Europa/Paris (CET — UTC+1)</option>
+                                                            <option value="Europe/Berlin">Europa/Berlim (CET — UTC+1)</option>
+                                                            <option value="Europe/Rome">Europa/Roma (CET — UTC+1)</option>
+                                                            <option value="Europe/Madrid">Europa/Madrid (CET — UTC+1)</option>
+                                                            <option value="Europe/Moscow">Europa/Moscou (MSK — UTC+3)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌏 Ásia e Oceania">
+                                                            <option value="Asia/Dubai">Ásia/Dubai (GST — UTC+4)</option>
+                                                            <option value="Asia/Kolkata">Ásia/Kolkata (IST — UTC+5:30)</option>
+                                                            <option value="Asia/Singapore">Ásia/Singapura (SGT — UTC+8)</option>
+                                                            <option value="Asia/Tokyo">Ásia/Tóquio (JST — UTC+9)</option>
+                                                            <option value="Asia/Seoul">Ásia/Seul (KST — UTC+9)</option>
+                                                            <option value="Australia/Sydney">Austrália/Sydney (AEDT — UTC+11)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌍 África">
+                                                            <option value="Africa/Luanda">África/Luanda (WAT — UTC+1)</option>
+                                                            <option value="Africa/Nairobi">África/Nairóbi (EAT — UTC+3)</option>
+                                                            <option value="Africa/Johannesburg">África/Joanesburgo (SAST — UTC+2)</option>
+                                                        </optgroup>
+                                                        <optgroup label="🌐 Universal">
+                                                            <option value="UTC">UTC (Tempo Universal Coordenado)</option>
+                                                        </optgroup>
+                                                    </select>
+                                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-40 text-sm">▾</span>
+                                                </div>
+                                                <div className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest ${isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-100 text-green-700'}`}>
+                                                    <span>🌐</span>
+                                                    <span>Auto-detectado</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[9px] font-medium opacity-25 ml-2 mt-3 italic">
+                                                Atual: {new Date().toLocaleTimeString('pt-BR', {
+                                                    timeZone: profile.userTimezone || localStorage.getItem('user_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                                    hour: '2-digit', minute: '2-digit'
+                                                })} no seu fuso selecionado
+                                            </p>
+                                        </div>
+
                                         <div>
                                             <p className="text-[10px] font-bold uppercase tracking-widest opacity-20 mb-4 ml-2">Idioma da Plataforma (Interface)</p>
                                             <p className="text-[9px] font-medium opacity-40 ml-2 mb-4 italic">Esta configuração altera apenas o conteúdo visual do aplicativo (Em breve).</p>
@@ -1767,6 +1852,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
                                         </div>
                                     </div>
                                 </div>
+
 
                                 {/* Section: Ringtone / Toque Musical */}
                                 <div className={`p-10 rounded-[3rem] border ${cardClasses}`}>
