@@ -12,6 +12,50 @@ import { InvitesTab } from './InvitesTab';
 import { TasksTab } from './TasksTab';
 import { addConnectionLog } from '../logger';
 
+const BRAZIL_ESTADOS = [
+  { uf: 'AC', nome: 'Acre' },
+  { uf: 'AL', nome: 'Alagoas' },
+  { uf: 'AP', nome: 'Amapá' },
+  { uf: 'AM', nome: 'Amazonas' },
+  { uf: 'BA', nome: 'Bahia' },
+  { uf: 'CE', nome: 'Ceará' },
+  { uf: 'DF', nome: 'Distrito Federal' },
+  { uf: 'ES', nome: 'Espírito Santo' },
+  { uf: 'GO', nome: 'Goiás' },
+  { uf: 'MA', nome: 'Maranhão' },
+  { uf: 'MT', nome: 'Mato Grosso' },
+  { uf: 'MS', nome: 'Mato Grosso do Sul' },
+  { uf: 'MG', nome: 'Minas Gerais' },
+  { uf: 'PA', nome: 'Pará' },
+  { uf: 'PB', nome: 'Paraíba' },
+  { uf: 'PR', nome: 'Paraná' },
+  { uf: 'PE', nome: 'Pernambuco' },
+  { uf: 'PI', nome: 'Piauí' },
+  { uf: 'RJ', nome: 'Rio de Janeiro' },
+  { uf: 'RN', nome: 'Rio Grande do Norte' },
+  { uf: 'RS', nome: 'Rio Grande do Sul' },
+  { uf: 'RO', nome: 'Rondônia' },
+  { uf: 'RR', nome: 'Roraima' },
+  { uf: 'SC', nome: 'Santa Catarina' },
+  { uf: 'SP', nome: 'São Paulo' },
+  { uf: 'SE', nome: 'Sergipe' },
+  { uf: 'TO', nome: 'Tocantins' }
+];
+
+const COUNTRIES_LIST = [
+  { code: 'BR', nome: 'Brasil', flag: '🇧🇷' },
+  { code: 'US', nome: 'Estados Unidos', flag: '🇺🇸' },
+  { code: 'PT', nome: 'Portugal', flag: '🇵🇹' },
+  { code: 'AO', nome: 'Angola', flag: '🇦🇴' },
+  { code: 'MZ', nome: 'Moçambique', flag: '🇲🇿' },
+  { code: 'JP', nome: 'Japão', flag: '🇯🇵' },
+  { code: 'FR', nome: 'França', flag: '🇫🇷' },
+  { code: 'DE', nome: 'Alemanha', flag: '🇩🇪' },
+  { code: 'IT', nome: 'Itália', flag: '🇮🇹' },
+  { code: 'ES', nome: 'Espanha', flag: '🇪🇸' },
+  { code: 'GB', nome: 'Reino Unido', flag: '🇬🇧' }
+];
+
 interface SetupScreenProps {
     profile: PartnerProfile;
     setProfile: React.Dispatch<React.SetStateAction<PartnerProfile>>;
@@ -1568,17 +1612,87 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ profile, setProfile, o
 
                                     <div className="mt-8 flex flex-col items-center w-full max-sm:px-4">
                                         <div className="w-full space-y-6">
-                                            <div className="relative group">
-                                                <input
-                                                    type="text"
-                                                    value={currentUserProfile?.city || ''}
-                                                    onChange={(e) => onUpdateUserProfile({ ...currentUserProfile!, city: e.target.value })}
-                                                    className={`w-full p-6 pl-14 rounded-[2rem] border text-sm font-bold italic tracking-tighter outline-none transition-all ${inputClasses}`}
-                                                    placeholder="Sua Cidade (Ex: São Paulo, SP)"
-                                                />
-                                                <span className="absolute left-6 top-1/2 -translate-y-1/2 text-xl opacity-30">📍</span>
-                                                <p className="text-[8px] font-black uppercase tracking-widest opacity-20 mt-2 ml-4">Localização da Cidade</p>
-                                            </div>
+                                            {(() => {
+                                                const cityStr = currentUserProfile?.city || '';
+                                                const parts = cityStr.split(',').map(s => s.trim());
+                                                const currentCity = parts[0] || '';
+                                                const currentState = parts[1] || '';
+                                                const currentCountry = parts[2] || 'Brasil';
+
+                                                const handleLocationChange = (newCity: string, newState: string, newCountry: string) => {
+                                                    const formatted = `${newCity || ''}, ${newState || ''}, ${newCountry || 'Brasil'}`;
+                                                    onUpdateUserProfile({ ...currentUserProfile!, city: formatted });
+                                                    supabase.from('profiles').update({ city: formatted }).eq('id', user.id).then();
+                                                };
+
+                                                return (
+                                                    <div className="w-full space-y-4">
+                                                        {/* País */}
+                                                        <div className="relative">
+                                                            <select
+                                                                value={currentCountry}
+                                                                onChange={(e) => handleLocationChange(currentCity, currentState, e.target.value)}
+                                                                className={`w-full p-6 pl-14 appearance-none rounded-[2rem] border text-xs font-bold uppercase tracking-widest outline-none transition-all ${inputClasses}`}
+                                                            >
+                                                                {COUNTRIES_LIST.map(c => (
+                                                                    <option key={c.code} value={c.nome}>
+                                                                        {c.flag} &nbsp; {c.nome}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <span className="absolute left-6 top-1/2 -translate-y-1/2 text-xl opacity-30">🌎</span>
+                                                            <span className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none opacity-40 text-sm">▾</span>
+                                                            <p className="text-[8px] font-black uppercase tracking-widest opacity-20 mt-2 ml-4">País</p>
+                                                        </div>
+
+                                                        {/* Estado e Cidade lado a lado */}
+                                                        <div className="grid grid-cols-3 gap-3">
+                                                            {/* Estado */}
+                                                            <div className="col-span-1 relative">
+                                                                {currentCountry === 'Brasil' ? (
+                                                                    <select
+                                                                        value={currentState}
+                                                                        onChange={(e) => handleLocationChange(currentCity, e.target.value, currentCountry)}
+                                                                        className={`w-full p-6 pl-4 pr-8 appearance-none rounded-[2rem] border text-xs font-bold uppercase tracking-widest outline-none transition-all ${inputClasses}`}
+                                                                    >
+                                                                        <option value="">UF</option>
+                                                                        {BRAZIL_ESTADOS.map(e => (
+                                                                            <option key={e.uf} value={e.uf}>
+                                                                                {e.uf}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                ) : (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={currentState}
+                                                                        onChange={(e) => handleLocationChange(currentCity, e.target.value, currentCountry)}
+                                                                        placeholder="Estado"
+                                                                        className={`w-full p-6 pl-6 rounded-[2rem] border text-xs font-bold uppercase tracking-widest outline-none transition-all ${inputClasses}`}
+                                                                    />
+                                                                )}
+                                                                {currentCountry === 'Brasil' && (
+                                                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-40 text-sm">▾</span>
+                                                                )}
+                                                                <p className="text-[8px] font-black uppercase tracking-widest opacity-20 mt-2 ml-4">Estado (UF)</p>
+                                                            </div>
+
+                                                            {/* Cidade */}
+                                                            <div className="col-span-2 relative">
+                                                                <input
+                                                                    type="text"
+                                                                    value={currentCity}
+                                                                    onChange={(e) => handleLocationChange(e.target.value, currentState, currentCountry)}
+                                                                    className={`w-full p-6 pl-12 rounded-[2rem] border text-xs font-bold uppercase tracking-widest outline-none transition-all ${inputClasses}`}
+                                                                    placeholder="Cidade (Ex: São Paulo)"
+                                                                />
+                                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg opacity-30">📍</span>
+                                                                <p className="text-[8px] font-black uppercase tracking-widest opacity-20 mt-2 ml-4">Cidade</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
 
                                             <div className={`p-6 rounded-[2rem] border ${borderClass} flex items-center justify-between group hover:border-blue-500/30 transition-all`}>
                                                 <div className="flex items-center gap-4">
