@@ -217,6 +217,29 @@ interface TasksTabProps {
   isDark?: boolean;
 }
 
+// Derive a stable user identifier from Supabase session or localStorage fingerprint
+// This works even WITHOUT login — the fingerprint persists across page reloads on the same device
+const getOrCreateUserId = (): string => {
+  // Try to get supabase session first (most reliable)
+  try {
+    const keys = Object.keys(localStorage);
+    for (const key of keys) {
+      if (key.includes('supabase') && key.includes('auth')) {
+        const val = JSON.parse(localStorage.getItem(key) || '{}');
+        if (val?.user?.id) return val.user.id;
+        if (val?.user?.email) return val.user.email;
+      }
+    }
+  } catch (_) {}
+  // Fall back to localStorage fingerprint
+  let fp = localStorage.getItem('parceiro_user_fp');
+  if (!fp) {
+    fp = 'anon_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('parceiro_user_fp', fp);
+  }
+  return fp;
+};
+
 export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
   const [viewMode, setViewMode] = useState<'PLANILHA' | 'CARDS'>('CARDS');
@@ -260,106 +283,111 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     notas: string;
   } | null>(null);
 
-  // Supabase Cloud Sync logic (Strict Cloud-First Persistence)
+  // -------------------------------------------------------
+  // CLOUD SYNC — uses dedicated user_tasks table
+  // user_id is derived from Supabase session OR stable localStorage fingerprint
+  // This works with AND without login, across multiple devices
+  // -------------------------------------------------------
+  const getUserId = (): string => {
+    if (user?.id) return user.id;
+    if (user?.email) return user.email;
+    return getOrCreateUserId();
+  };
+
   const syncTasksWithCloud = async () => {
     setIsSyncing(true);
     try {
+      const uid = getUserId();
       const { data, error } = await supabase
-        .from('reminders')
-        .select('*')
-        .like('title', '[TASK_ITEM]%')
-        .order('created_at', { ascending: false });
+        .from('user_tasks')
+        .select('task_name, task_data, updated_at')
+        .eq('user_id', uid)
+        .order('updated_at', { ascending: false });
 
-      if (!error && data) {
-        if (data.length > 0) {
-          const cloudTasks: TaskItem[] = [];
-          data.forEach(item => {
-            if (item.notes) {
-              try {
-                const parsedTask = JSON.parse(item.notes);
-                if (parsedTask && parsedTask.nome) {
-                  cloudTasks.push(parsedTask);
-                }
-              } catch (e) {}
+      if (error) {
+        // If table doesn't exist yet, fall back to localStorage only
+        console.warn('user_tasks sync error (table may not exist yet):', error.message);
+        const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) setTasks(parsed);
+          } catch (_) {}
+        }
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Cloud is the ONLY source of truth — no local re-merging of deleted tasks
+        const cloudTasks: TaskItem[] = [];
+        const seenNames = new Set<string>();
+        data.forEach(row => {
+          try {
+            const t: TaskItem = typeof row.task_data === 'string'
+              ? JSON.parse(row.task_data)
+              : row.task_data;
+            const key = (t.nome || row.task_name || '').toLowerCase().trim();
+            if (t && t.nome && !seenNames.has(key)) {
+              seenNames.add(key);
+              cloudTasks.push(t);
             }
-          });
-
-          if (cloudTasks.length > 0) {
-            // Deduplicate cloud tasks by name (case-insensitive)
-            const taskMap = new Map<string, TaskItem>();
-            cloudTasks.forEach(ct => {
-              const key = ct.nome.toLowerCase().trim();
-              if (!taskMap.has(key)) {
-                taskMap.set(key, ct);
-              }
-            });
-
-            const finalTasks = Array.from(taskMap.values());
-            setTasks(finalTasks);
-            localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(finalTasks));
-          }
-        } else {
-          // Cloud is completely empty - Seed initial default tasks to cloud once if local has them
-          const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
-          let currentLocal: TaskItem[] = INITIAL_TASKS;
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                currentLocal = parsed;
-              }
-            } catch (e) {}
-          }
-          setTasks(currentLocal);
-
-          // Seed local tasks to Supabase Cloud
-          for (const initT of currentLocal) {
-            await supabase.from('reminders').insert({
-              owner_id: user?.id || null,
-              title: `[TASK_ITEM] ${initT.nome}`,
-              notes: JSON.stringify(initT),
-              trigger_at: new Date().toISOString()
-            });
-          }
+          } catch (_) {}
+        });
+        if (cloudTasks.length > 0) {
+          setTasks(cloudTasks);
+          localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(cloudTasks));
+        }
+      } else {
+        // Cloud is empty for this user — seed default tasks to cloud
+        const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+        let seed: TaskItem[] = INITIAL_TASKS;
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) seed = parsed;
+          } catch (_) {}
+        }
+        setTasks(seed);
+        // Upload seed tasks to cloud
+        for (const t of seed) {
+          await supabase.from('user_tasks').upsert({
+            user_id: uid,
+            task_name: t.nome,
+            task_data: t
+          }, { onConflict: 'user_id,task_name' });
         }
       }
     } catch (e) {
-      console.error('Error syncing tasks with Supabase:', e);
+      console.error('syncTasksWithCloud error:', e);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Persistence & Realtime Event Listeners
+  // Persistence & Realtime Listeners
   useEffect(() => {
+    // Load from localStorage immediately for fast render
     try {
       const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setTasks(parsed);
-        }
+        if (Array.isArray(parsed) && parsed.length > 0) setTasks(parsed);
       }
-
       const savedPeriodic = localStorage.getItem('parceiro_virtual_periodic_active');
-      if (savedPeriodic === 'true') {
-        setIsPeriodicActivationActive(true);
-      } else {
-        setIsPeriodicActivationActive(false);
-      }
-    } catch (e) {}
+      setIsPeriodicActivationActive(savedPeriodic === 'true');
+    } catch (_) {}
 
-    // Initial sync from cloud + Realtime Subscription for instantaneous sync across browsers
+    // Then override with authoritative cloud data
     syncTasksWithCloud();
-    const channel = supabase.channel('tasks_realtime_channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reminders' }, () => {
+
+    // Realtime: listen for changes from other devices
+    const channel = supabase.channel('user_tasks_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_tasks' }, () => {
         syncTasksWithCloud();
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [user?.id]);
 
   useEffect(() => {
@@ -396,20 +424,26 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     if (!window.confirm(`Tem certeza que deseja excluir a tarefa "${task.nome}"?`)) return;
 
     // Remove locally immediately for instant feedback
-    const updatedTasks = tasks.filter(t => t.id !== task.id && t.nome.toLowerCase().trim() !== task.nome.toLowerCase().trim());
+    const updatedTasks = tasks.filter(t =>
+      t.id !== task.id &&
+      t.nome.toLowerCase().trim() !== task.nome.toLowerCase().trim()
+    );
     updateAndSaveTasks(updatedTasks);
 
-    // Remove ALL matching entries from Supabase Cloud
+    // Remove from Supabase user_tasks table (cloud)
     try {
-      await supabase
-        .from('reminders')
+      const uid = getUserId();
+      const { error } = await supabase
+        .from('user_tasks')
         .delete()
-        .ilike('title', `[TASK_ITEM] ${task.nome}`);
+        .eq('user_id', uid)
+        .ilike('task_name', task.nome);
 
-      // Re-sync with cloud after deletion
+      if (error) console.error('Delete cloud error:', error.message);
+      // Re-sync to confirm deletion and broadcast to other devices
       await syncTasksWithCloud();
     } catch (e) {
-      console.error('Error deleting task from Supabase:', e);
+      console.error('Error deleting task from cloud:', e);
     }
   };
 
@@ -463,23 +497,27 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     const updatedList = tasks.map(t => (t.id === editingTask.id ? updatedTask : t));
     updateAndSaveTasks(updatedList);
 
-    // Update in Supabase Cloud
+    // Update in cloud (user_tasks table)
     try {
-      await supabase.from('reminders').delete().ilike('title', `[TASK_ITEM] ${editingTask.nome}`);
+      const uid = getUserId();
+      // If name changed, delete the old row first
       if (editingTask.nome !== updatedTask.nome) {
-        await supabase.from('reminders').delete().ilike('title', `[TASK_ITEM] ${updatedTask.nome}`);
+        await supabase
+          .from('user_tasks')
+          .delete()
+          .eq('user_id', uid)
+          .ilike('task_name', editingTask.nome);
       }
-
-      await supabase.from('reminders').insert({
-        owner_id: user?.id || null,
-        title: `[TASK_ITEM] ${updatedTask.nome}`,
-        notes: JSON.stringify(updatedTask),
-        trigger_at: new Date().toISOString()
-      });
-
+      // Upsert the updated task
+      const { error } = await supabase.from('user_tasks').upsert({
+        user_id: uid,
+        task_name: updatedTask.nome,
+        task_data: updatedTask
+      }, { onConflict: 'user_id,task_name' });
+      if (error) console.error('Error updating task in cloud:', error.message);
       await syncTasksWithCloud();
     } catch (e) {
-      console.error('Error updating task in Supabase:', e);
+      console.error('Error updating task in cloud:', e);
     }
 
     setEditingTask(null);
@@ -686,22 +724,21 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     const updated = [newTask, ...tasks];
     updateAndSaveTasks(updated);
 
-    // Save to Supabase cloud WITH AWAIT to guarantee persistence across devices
+    // Save to cloud (user_tasks table) — works with or without login
     try {
-      await supabase.from('reminders').delete().ilike('title', `[TASK_ITEM] ${newTask.nome}`);
-
-      const { error } = await supabase.from('reminders').insert({
-        owner_id: user?.id || null,
-        title: `[TASK_ITEM] ${newTask.nome}`,
-        notes: JSON.stringify(newTask),
-        trigger_at: new Date().toISOString()
-      });
+      const uid = getUserId();
+      const { error } = await supabase.from('user_tasks').upsert({
+        user_id: uid,
+        task_name: newTask.nome,
+        task_data: newTask
+      }, { onConflict: 'user_id,task_name' });
       if (error) {
-        console.error('Error inserting task to Supabase:', error);
+        console.error('Error inserting task to cloud:', error.message, error.code, error.hint);
+      } else {
+        await syncTasksWithCloud();
       }
-      await syncTasksWithCloud();
     } catch (e) {
-      console.error('Failed to insert task to Supabase:', e);
+      console.error('Failed to insert task to cloud:', e);
     }
 
     setShowCreateModal(false);
