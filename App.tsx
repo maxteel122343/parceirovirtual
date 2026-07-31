@@ -7,6 +7,7 @@ import { HumanCallScreen } from './components/HumanCallScreen';
 import { WelcomeVoiceManager } from './components/WelcomeVoiceManager';
 import { PartnerProfile, Mood, VoiceName, Accent, CallbackIntensity, ScheduledCall, CallLog, PlatformLanguage, UserProfile } from './types';
 import { supabase } from './supabaseClient';
+import { TaskItem } from './components/TasksTab';
 
 const DEFAULT_PROFILE: PartnerProfile = {
   name: "Amor",
@@ -659,6 +660,40 @@ function App() {
   useEffect(() => {
     if (!user) return;
 
+    // Trigger function for task/calendar alarms
+    const triggerProactiveCall = (reasonText: string, alertText: string) => {
+      if (appState === 'CALLING') {
+        console.log("User in call. Triggering reminder event:", alertText);
+        window.dispatchEvent(new CustomEvent('reminder-triggered', { detail: { title: alertText } }));
+      } else {
+        console.log("Triggering proactive incoming call for:", reasonText);
+        setCallReason(reasonText);
+        setActivePartner({
+          ...profileRef.current,
+          callerInfo: {
+            id: user.id,
+            name: currentUserProfile?.nickname || currentUserProfile?.display_name || 'Meu Humano',
+            isPartner: true
+          }
+        });
+        setAppState('INCOMING');
+      }
+    };
+
+    // Helper to calculate total duration in minutes
+    const parseDurationToMinutes = (dur: string): number => {
+      let total = 30;
+      const lower = dur.toLowerCase();
+      if (lower.includes('h')) {
+        const hrs = parseInt(lower.match(/(\d+)\s*h/)?.[1] || '0');
+        const mins = parseInt(lower.match(/(\d+)\s*m/)?.[1] || '0');
+        total = hrs * 60 + mins;
+      } else if (lower.includes('m')) {
+        total = parseInt(lower.match(/(\d+)\s*m/)?.[1] || '30');
+      }
+      return total;
+    };
+
     const checkReminders = async () => {
       const now = new Date().toISOString();
       const { data: dueReminders } = await supabase
@@ -670,29 +705,146 @@ function App() {
 
       if (dueReminders && dueReminders.length > 0) {
         for (const reminder of dueReminders) {
-          // Skip if already triggered in this browser session
           if (triggeredReminderIdsRef.current.includes(reminder.id)) continue;
           triggeredReminderIdsRef.current.push(reminder.id);
 
           if (appState === 'CALLING') {
-            console.log("Usuário em chamada. Disparando interrupção de lembrete:", reminder.title);
             window.dispatchEvent(new CustomEvent('reminder-triggered', { detail: { title: reminder.title } }));
-            // Mark as completed in DB so it doesn't trigger again
             await supabase.from('reminders').update({ is_completed: true }).eq('id', reminder.id);
           } else {
-            console.log("Compromisso agendado atingido. Disparando ligação:", reminder.title);
-            setCallReason(`reminder:${reminder.title}`);
-            setActivePartner({
-              ...profileRef.current,
-              callerInfo: {
-                id: user.id,
-                name: currentUserProfile?.nickname || currentUserProfile?.display_name || 'Meu Humano',
-                isPartner: true
-              }
-            });
-            setAppState('INCOMING');
+            triggerProactiveCall(`reminder:${reminder.title}`, reminder.title);
           }
         }
+      }
+
+      // ── 7 SELETORES GRANULARES DE TAREFAS ENGINE ──────────────────────
+      try {
+        const savedTasks = localStorage.getItem('parceiro_virtual_tasks_v2');
+        if (!savedTasks) return;
+        const tasksList: TaskItem[] = JSON.parse(savedTasks);
+        if (!Array.isArray(tasksList)) return;
+
+        // User Timezone or default Sao Paulo fuso
+        const tz = localStorage.getItem('user_timezone') || 'America/Sao_Paulo';
+        const userLocalDateStr = new Date().toLocaleString('en-US', { timeZone: tz });
+        const userLocalTime = new Date(userLocalDateStr).getTime();
+
+        for (const task of tasksList) {
+          if (!task.inicioData || task.status === 'Concluído') continue;
+
+          const taskStartTime = new Date(new Date(task.inicioData).toLocaleString('en-US', { timeZone: tz })).getTime();
+          const durationMinutes = parseDurationToMinutes(task.duracaoEst);
+          const taskEndTime = taskStartTime + durationMinutes * 60 * 1000;
+
+          // Define fractions (1/N)
+          let nDivider = 3; // Default 1/3
+          if (task.lembreteIa?.includes('1/5') || task.lembreteIa?.includes('5 min') || task.duracaoEst === '15m') nDivider = 5;
+          else if (task.lembreteIa?.includes('1/2') || task.lembreteIa?.includes('30 min')) nDivider = 2;
+          else if (task.lembreteIa?.includes('1/4') || task.lembreteIa?.includes('15 min')) nDivider = 4;
+          
+          const intervalMs = (durationMinutes * 60 * 1000) / nDivider;
+          const settings = task.reminderSettings || {
+            notifyAtStart: true,
+            askIfStartedAfterNotify: true,
+            remindEveryFraction: true,
+            askProgressEveryFraction: true,
+            askIfFinishedLastFraction: true,
+            remindAfterEstimated: false,
+            notifyBeforeStartMinutes: null
+          };
+
+          const keyPrefix = `task_trig_${task.id}_`;
+
+          // Rule 7: X minutos antes
+          if (settings.notifyBeforeStartMinutes) {
+            const minutesBefore = settings.notifyBeforeStartMinutes;
+            const targetTime = taskStartTime - minutesBefore * 60 * 1000;
+            const key = `${keyPrefix}before_${minutesBefore}`;
+            if (userLocalTime >= targetTime && userLocalTime < taskStartTime && !localStorage.getItem(key)) {
+              localStorage.setItem(key, 'true');
+              triggerProactiveCall(
+                `task_warn_before:${task.nome}:${minutesBefore}`,
+                `Lembrete antecipado: A tarefa "${task.nome}" começa em ${minutesBefore} minutos!`
+              );
+            }
+          }
+
+          // Rule 1 & Rule 2: Início exato
+          if (settings.notifyAtStart) {
+            const key = `${keyPrefix}start`;
+            if (userLocalTime >= taskStartTime && userLocalTime < taskStartTime + 30000 && !localStorage.getItem(key)) {
+              localStorage.setItem(key, 'true');
+              if (settings.askIfStartedAfterNotify) {
+                triggerProactiveCall(
+                  `task_start_prompt:${task.nome}`,
+                  `Início da Tarefa: A tarefa "${task.nome}" começa agora às ${new Date(taskStartTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}. Você quer iniciar agora?`
+                );
+              } else {
+                triggerProactiveCall(
+                  `task_start_only:${task.nome}`,
+                  `Aviso: A tarefa "${task.nome}" deve iniciar agora!`
+                );
+              }
+            }
+          }
+
+          // Loop for 1/N intervals
+          for (let i = 1; i <= nDivider; i++) {
+            const fractionTime = taskStartTime + intervalMs * i;
+            const isLastFraction = i === nDivider;
+
+            // Rule 5: No último 1/N
+            if (isLastFraction && settings.askIfFinishedLastFraction) {
+              const key = `${keyPrefix}finish_check`;
+              if (userLocalTime >= fractionTime - 60000 && userLocalTime < fractionTime + 60000 && !localStorage.getItem(key)) {
+                localStorage.setItem(key, 'true');
+                triggerProactiveCall(
+                  `task_finish_check:${task.nome}`,
+                  `Verificação: A tarefa "${task.nome}" está no fim estimado. Você já finalizou?`
+                );
+              }
+            }
+
+            // Rule 3: Perguntar se iniciou a cada 1/N se Pendente
+            if (!isLastFraction && settings.remindEveryFraction && task.status === 'Pendente') {
+              const key = `${keyPrefix}pending_check_${i}`;
+              if (userLocalTime >= fractionTime && userLocalTime < fractionTime + 60000 && !localStorage.getItem(key)) {
+                localStorage.setItem(key, 'true');
+                triggerProactiveCall(
+                  `task_start_pending_check:${task.nome}`,
+                  `Lembrete: A tarefa "${task.nome}" está pendente. Você já iniciou?`
+                );
+              }
+            }
+
+            // Rule 4: Perguntar progresso a cada 1/N se Em Curso
+            if (!isLastFraction && settings.askProgressEveryFraction && task.status === 'Em Curso') {
+              const key = `${keyPrefix}progress_check_${i}`;
+              if (userLocalTime >= fractionTime && userLocalTime < fractionTime + 60000 && !localStorage.getItem(key)) {
+                localStorage.setItem(key, 'true');
+                triggerProactiveCall(
+                  `task_progress_check:${task.nome}:${Math.round((i / nDivider) * 100)}`,
+                  `Progresso: Como está o desenvolvimento da tarefa "${task.nome}"?`
+                );
+              }
+            }
+          }
+
+          // Rule 6: Insistir após tempo estimado expirar
+          if (settings.remindAfterEstimated) {
+            const overdueTime = taskEndTime + 5 * 60 * 1000; // 5 minutos depois
+            const key = `${keyPrefix}overdue`;
+            if (userLocalTime >= overdueTime && !localStorage.getItem(key)) {
+              localStorage.setItem(key, 'true');
+              triggerProactiveCall(
+                `task_overdue:${task.nome}`,
+                `Aviso: O tempo estimado para "${task.nome}" já esgotou. Concluiu ou deseja adiar?`
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error checking task reminders:", err);
       }
     };
 

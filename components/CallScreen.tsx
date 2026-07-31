@@ -743,7 +743,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
           type: Type.OBJECT,
           properties: {
             task_name: { type: Type.STRING, description: 'Nome da tarefa a atualizar' },
-            status: { type: Type.STRING, enum: ['Pendente', 'Concluído'] },
+            status: { type: Type.STRING, enum: ['Pendente', 'Em Curso', 'Concluído', 'Adiada'] },
             recorrenciaDetalhe: { type: Type.STRING },
             duracaoEst: { type: Type.STRING },
             lembreteIa: { type: Type.STRING }
@@ -796,6 +796,32 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
       else if (callReason?.startsWith("reminder:")) extraContext = `Motivo da ligação: Lembrete agendado sobre: ${callReason.split(':')[1]}`;
       else if (callReason?.startsWith("location_warning:")) extraContext = `ALERTA DE LOCALIZAÇÃO PROATIVO: Você percebeu pelo GPS que o usuário NÃO está no local do compromisso agendado e corre o risco de se atrasar (ou já deveria estar lá). Ligue para avisar, pergunte onde ele está agora e se ele precisa de ajuda para chegar ao local. Seja prestativa e atenciosa.`;
       else if (callReason?.startsWith("location_arrival:")) extraContext = `PARABÉNS DE CHEGADA PROATIVO: Você percebeu pelo GPS que o usuário ACABA DE CHEGAR no local do compromisso agendado. Ligue para parabenizá-lo calorosamente por ter chegado a tempo, desejar um ótimo treino/atividade e dizer que está torcendo por ele!`;
+      
+      // ── CONTEXTOS DE ALARMES TAREFAS 7-SELETORES ────────────────────
+      else if (callReason?.startsWith("task_warn_before:")) {
+        const parts = callReason.split(':');
+        extraContext = `AVISO ANTECIPADO DE TAREFA (Regra 7): A tarefa "${parts[1]}" iniciará em ${parts[2]} minutos. Avise o usuário e pergunte se ele já está se preparando.`;
+      }
+      else if (callReason?.startsWith("task_start_prompt:")) {
+        extraContext = `INÍCIO DE TAREFA COM CONFIRMAÇÃO (Regra 1 & 2): O horário da tarefa "${callReason.split(':')[1]}" começou. Avise-o que a tarefa está começando agora e pergunte explicitamente: 'Podemos iniciar agora?'. Se ele responder sim, você DEVE usar a ferramenta 'update_task_ai' para mudar o status da tarefa para 'Em Curso'.`;
+      }
+      else if (callReason?.startsWith("task_start_only:")) {
+        extraContext = `AVISO DE INÍCIO SIMPLES (Regra 1): O horário da tarefa "${callReason.split(':')[1]}" começou. Avise-o que a tarefa deve ser iniciada.`;
+      }
+      else if (callReason?.startsWith("task_start_pending_check:")) {
+        extraContext = `VERIFICAÇÃO DE INÍCIO PENDENTE (Regra 3): A tarefa "${callReason.split(':')[1]}" já deveria ter começado e ainda está como Pendente. Pergunte se ele já iniciou e se pode marcar como 'Em Curso'.`;
+      }
+      else if (callReason?.startsWith("task_progress_check:")) {
+        const parts = callReason.split(':');
+        extraContext = `CONTROLE DE PROGRESSO (Regra 4): A tarefa "${parts[1]}" está Em Curso. Você atingiu ${parts[2]}% do tempo estimado dela. Pergunte de forma gentil e amigável: 'Como está o desenvolvimento da tarefa?' para auxiliá-lo.`;
+      }
+      else if (callReason?.startsWith("task_finish_check:")) {
+        extraContext = `VERIFICAÇÃO DE FINALIZAÇÃO (Regra 5): O tempo estimado da tarefa "${callReason.split(':')[1]}" está no fim (último intervalo). Pergunte em tom prestativo se ele finalizou. Se ele disser que sim, você DEVE marcar como 'Concluído'. Se ele pedir para adiar, mude o status para 'Adiada' (ela irá para a fila de adiadas).`;
+      }
+      else if (callReason?.startsWith("task_overdue:")) {
+        extraContext = `AVISO DE TEMPO EXCEDIDO (Regra 6): A tarefa "${callReason.split(':')[1]}" passou do tempo estimado e não foi finalizada. Pergunte se ele concluiu ou se deseja adiar agora.`;
+      }
+
       else if (callReason === "curiosity_calendar") extraContext = "Motivo da ligação: Você percebeu que o usuário alterou um compromisso que você tinha marcado no calendário. Fique curiosa, pergunte por que ele mudou e se ele ainda quer que você o lembre.";
       else if (callReason === "random") extraContext = "Motivo da ligação: Você sentiu saudades e ligou aleatoriamente.";
       else if (callReason === "receptionist") extraContext = `VOCÊ ESTÁ ATENDENDO POR SEU PARCEIRO "${profile.currentPartnerNickname || 'seu humano'}".
@@ -1229,20 +1255,44 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     if (saved) currentTasks = JSON.parse(saved);
                   } catch(e) {}
 
+                  let updatedTargetTask: any = null;
                   const updatedTasks = currentTasks.map(t => {
                     if (t.nome.toLowerCase().includes((task_name || '').toLowerCase())) {
-                      return {
+                      updatedTargetTask = {
                         ...t,
                         status: status || t.status,
                         lembreteIa: lembreteIa || t.lembreteIa,
                         duracaoEst: duracaoEst || t.duracaoEst
                       };
+                      return updatedTargetTask;
                     }
                     return t;
                   });
 
                   localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(updatedTasks));
                   window.dispatchEvent(new CustomEvent('tasks-updated', { detail: updatedTasks }));
+
+                  // Sync single updated task to the cloud user_tasks table
+                  if (updatedTargetTask) {
+                    try {
+                      // Derive a user id from supabase
+                      const keys = Object.keys(localStorage);
+                      let uid = localStorage.getItem('parceiro_user_fp') || 'anon';
+                      for (const key of keys) {
+                        if (key.includes('supabase') && key.includes('auth')) {
+                          const val = JSON.parse(localStorage.getItem(key) || '{}');
+                          if (val?.user?.id) uid = val.user.id;
+                        }
+                      }
+                      supabase.from('user_tasks').upsert({
+                        user_id: uid,
+                        task_name: updatedTargetTask.nome,
+                        task_data: updatedTargetTask
+                      }, { onConflict: 'user_id,task_name' }).then(({ error }) => {
+                        if (error) console.error('Cloud task update sync error:', error.message);
+                      });
+                    } catch (_) {}
+                  }
 
                   result = `Tarefa "${task_name}" atualizada com sucesso no banco de dados e sincronizada!`;
                   addConnectionLog('success', `IA atualizou a tarefa "${task_name}".`);

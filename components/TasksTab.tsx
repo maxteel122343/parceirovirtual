@@ -2,6 +2,34 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, PartnerProfile } from '../types';
 import { supabase } from '../supabaseClient';
 
+// ── 7 SELETORES DE LEMBRETE GRANULAR ──────────────────────────────
+export interface ReminderSettings {
+  // 1. Avisar da tarefa no horário agendado (em chamada ou não)
+  notifyAtStart: boolean;
+  // 2. Após avisar em chamada, perguntar imediatamente se quer iniciar → marca Em Curso
+  askIfStartedAfterNotify: boolean;
+  // 3. A cada 1/n do tempo estimado, perguntar se iniciou (quando Pendente)
+  remindEveryFraction: boolean;
+  // 4. A cada 1/n do tempo estimado, perguntar como está o desenvolvimento (quando Em Curso)
+  askProgressEveryFraction: boolean;
+  // 5. No último 1/n do tempo estimado, perguntar se finalizou → marca Concluído ou Adiada
+  askIfFinishedLastFraction: boolean;
+  // 6. Após o tempo estimado encerrar, lembrar novamente (caso ainda Pendente/Em Curso)
+  remindAfterEstimated: boolean;
+  // 7. X minutos ANTES do horário de início da tarefa, avisar antecipadamente
+  notifyBeforeStartMinutes: number | null; // null = desativado; valores: 5, 10, 15, 30, 60
+}
+
+const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  notifyAtStart: true,
+  askIfStartedAfterNotify: true,
+  remindEveryFraction: true,
+  askProgressEveryFraction: true,
+  askIfFinishedLastFraction: true,
+  remindAfterEstimated: false,
+  notifyBeforeStartMinutes: null,
+};
+
 export interface TaskItem {
   id: number;
   nome: string;
@@ -16,7 +44,7 @@ export interface TaskItem {
   terminoCalculado: string;
   lembreteIa: string; // ex: "A cada 30 min", "A cada 1 hora", "Desativado"
   proxExecucao: string;
-  status: 'Concluído' | 'Pendente';
+  status: 'Concluído' | 'Pendente' | 'Em Curso' | 'Adiada';
   quantFeita: number;
   subtarefas: { total: number; concluidas: number; itens: string[] };
   propriedadesGanhas: string;
@@ -26,6 +54,7 @@ export interface TaskItem {
   isAtivadaPeriodica?: boolean;
   horarioAgendaAgendado?: string;
   isAdiada?: boolean;
+  reminderSettings?: ReminderSettings; // 7 seletores de lembrete granular
 }
 
 // Helper to format date string to YYYY-MM-DDTHH:mm for datetime-local input
@@ -281,6 +310,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     subtasksInput: string[];
     propriedadesGanhas: string;
     notas: string;
+    status: 'Concluído' | 'Pendente' | 'Em Curso' | 'Adiada';
+    reminderSettings: ReminderSettings;
   } | null>(null);
 
   // -------------------------------------------------------
@@ -459,15 +490,17 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       inicioData: task.inicioData || getNowDateTimeLocal(),
       duracaoEst: task.duracaoEst,
       lembreteIa: task.lembreteIa,
-      subtasksInput: [...task.subtarefas.itens, '', '', '', ''].slice(0, 5),
+      subtasksInput: [...(task.subtarefas?.itens || []), '', '', '', '', ''].slice(0, 5),
       propriedadesGanhas: task.propriedadesGanhas,
-      notas: task.notas
+      notas: task.notas,
+      status: task.status,
+      reminderSettings: task.reminderSettings || { ...DEFAULT_REMINDER_SETTINGS }
     });
   };
 
   const handleSaveEditedTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingTask || !editForm || !editForm.nome.trim()) return;
+    if (!editingTask || !editForm) return;
 
     const validSubtasks = editForm.subtasksInput.filter(s => s.trim() !== '');
     const inicioStr = editForm.inicioNulo ? null : editForm.inicioData;
@@ -485,13 +518,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       terminoCalculado: terminoCalculado,
       lembreteIa: editForm.lembreteIa,
       proxExecucao: inicioStr ? new Date(inicioStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Indefinido',
+      status: editForm.status,
       subtarefas: {
         total: validSubtasks.length || 1,
         concluidas: Math.min(editingTask.subtarefas.concluidas, validSubtasks.length || 1),
         itens: validSubtasks.length ? validSubtasks : ['Executar Tarefa']
       },
       propriedadesGanhas: editForm.propriedadesGanhas || '+Foco',
-      notas: editForm.notas || '--'
+      notas: editForm.notas || '--',
+      reminderSettings: editForm.reminderSettings
     };
 
     const updatedList = tasks.map(t => (t.id === editingTask.id ? updatedTask : t));
@@ -681,7 +716,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     lembreteIa: 'A cada 1 hora',
     subtasksInput: ['', '', '', '', ''],
     propriedadesGanhas: '+Força Muscular, +Resistência',
-    notas: ''
+    notas: '',
+    reminderSettings: { ...DEFAULT_REMINDER_SETTINGS }
   });
 
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date());
@@ -718,7 +754,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       },
       propriedadesGanhas: newTaskForm.propriedadesGanhas || '+Foco',
       inerciaAtual: '--',
-      notas: newTaskForm.notas || '--'
+      notas: newTaskForm.notas || '--',
+      reminderSettings: newTaskForm.reminderSettings
     };
 
     const updated = [newTask, ...tasks];
@@ -756,7 +793,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       lembreteIa: 'A cada 1 hora',
       subtasksInput: ['', '', '', '', ''],
       propriedadesGanhas: '+Força Muscular, +Resistência',
-      notas: ''
+      notas: '',
+      reminderSettings: { ...DEFAULT_REMINDER_SETTINGS }
     });
   };
 
@@ -1488,23 +1526,144 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     </div>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Status da Tarefa</label>
+                    <select
+                      value={editForm.status}
+                      onChange={e => setEditForm({ ...editForm, status: e.target.value as any })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="Pendente">Pendente</option>
+                      <option value="Em Curso">Em Curso</option>
+                      <option value="Concluído">Concluído</option>
+                      <option value="Adiada">Adiada</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                      🤖 Frequência Padrão do Lembrete
+                    </label>
+                    <select
+                      value={editForm.lembreteIa}
+                      onChange={e => setEditForm({ ...editForm, lembreteIa: e.target.value })}
+                      className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-2 text-xs text-purple-300 font-bold focus:outline-none focus:border-purple-400"
+                    >
+                      <option value="A cada 15 min">Lembrar a cada 15 minutos</option>
+                      <option value="A cada 30 min">Lembrar a cada 30 minutos</option>
+                      <option value="A cada 1 hora">Lembrar a cada 1 hora</option>
+                      <option value="A cada 2 horas">Lembrar a cada 2 horas</option>
+                      <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
+                      <option value="Desativado">Desativado</option>
+                    </select>
+                  </div>
+                </div>
 
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
-                    🤖 Lembrete IA
-                  </label>
-                  <select
-                    value={editForm.lembreteIa}
-                    onChange={e => setEditForm({ ...editForm, lembreteIa: e.target.value })}
-                    className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-2 text-xs text-purple-300 font-bold focus:outline-none focus:border-purple-400"
-                  >
-                    <option value="A cada 15 min">Lembrar a cada 15 minutos</option>
-                    <option value="A cada 30 min">Lembrar a cada 30 minutos</option>
-                    <option value="A cada 1 hora">Lembrar a cada 1 hora</option>
-                    <option value="A cada 2 horas">Lembrar a cada 2 horas</option>
-                    <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
-                    <option value="Desativado">Desativado</option>
-                  </select>
+                {/* 7 Seletores Granulares de Lembrete */}
+                <div className="pt-4 border-t border-dashed border-slate-800 space-y-4">
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <span>⚙️</span> Configurações de Regra de Lembrete da IA (7 Opções)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.notifyAtStart}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, notifyAtStart: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>1. Avisar da tarefa no início (chamada ativa ou ligação)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.askIfStartedAfterNotify}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, askIfStartedAfterNotify: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>2. Em seguida, perguntar imediatamente se iniciou → Em Curso</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.remindEveryFraction}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, remindEveryFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>3. Perguntar se iniciou a cada 1/N do tempo (se Pendente)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.askProgressEveryFraction}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, askProgressEveryFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>4. Perguntar progresso a cada 1/N do tempo (se Em Curso)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.askIfFinishedLastFraction}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, askIfFinishedLastFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>5. No último 1/N tempo, perguntar se finalizou → Concluir/Adiar</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.reminderSettings.remindAfterEstimated}
+                        onChange={e => setEditForm({
+                          ...editForm,
+                          reminderSettings: { ...editForm.reminderSettings, remindAfterEstimated: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>6. Lembrar e insistir após a duração estimada expirar</span>
+                    </label>
+
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 col-span-1 md:col-span-2">
+                      <span>7. Lembrar antecipadamente antes de iniciar:</span>
+                      <select
+                        value={editForm.reminderSettings.notifyBeforeStartMinutes || ''}
+                        onChange={e => {
+                          const val = e.target.value ? parseInt(e.target.value) : null;
+                          setEditForm({
+                            ...editForm,
+                            reminderSettings: { ...editForm.reminderSettings, notifyBeforeStartMinutes: val }
+                          });
+                        }}
+                        className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white outline-none"
+                      >
+                        <option value="">Desativado</option>
+                        <option value="5">5 minutos antes</option>
+                        <option value="15">15 minutos antes</option>
+                        <option value="30">30 minutos antes</option>
+                        <option value="60">1 hora antes</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1742,10 +1901,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     </div>
                   </div>
                 </div>
-
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
-                    🤖 Lembrete IA (Notificação & Chamada Contínua)
+                    🤖 Frequência Padrão do Lembrete IA
                   </label>
                   <select
                     value={newTaskForm.lembreteIa}
@@ -1759,6 +1917,113 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
                     <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
                     <option value="Desativado">Desativado</option>
                   </select>
+                </div>
+
+                {/* 7 Seletores Granulares de Lembrete (Criação) */}
+                <div className="pt-4 border-t border-dashed border-slate-800 space-y-4">
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <span>⚙️</span> Configurações de Regra de Lembrete da IA (7 Opções)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.notifyAtStart}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, notifyAtStart: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>1. Avisar da tarefa no início (chamada ativa ou ligação)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.askIfStartedAfterNotify}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, askIfStartedAfterNotify: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>2. Em seguida, perguntar imediatamente se iniciou → Em Curso</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.remindEveryFraction}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, remindEveryFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>3. Perguntar se iniciou a cada 1/N do tempo (se Pendente)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.askProgressEveryFraction}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, askProgressEveryFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>4. Perguntar progresso a cada 1/N do tempo (se Em Curso)</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.askIfFinishedLastFraction}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, askIfFinishedLastFraction: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>5. No último 1/N tempo, perguntar se finalizou → Concluir/Adiar</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.reminderSettings.remindAfterEstimated}
+                        onChange={e => setNewTaskForm({
+                          ...newTaskForm,
+                          reminderSettings: { ...newTaskForm.reminderSettings, remindAfterEstimated: e.target.checked }
+                        })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-blue-500"
+                      />
+                      <span>6. Lembrar e insistir após a duração estimada expirar</span>
+                    </label>
+
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 col-span-1 md:col-span-2">
+                      <span>7. Lembrar antecipadamente antes de iniciar:</span>
+                      <select
+                        value={newTaskForm.reminderSettings.notifyBeforeStartMinutes || ''}
+                        onChange={e => {
+                          const val = e.target.value ? parseInt(e.target.value) : null;
+                          setNewTaskForm({
+                            ...newTaskForm,
+                            reminderSettings: { ...newTaskForm.reminderSettings, notifyBeforeStartMinutes: val }
+                          });
+                        }}
+                        className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white outline-none"
+                      >
+                        <option value="">Desativado</option>
+                        <option value="5">5 minutos antes</option>
+                        <option value="15">15 minutos antes</option>
+                        <option value="30">30 minutos antes</option>
+                        <option value="60">1 hora antes</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
