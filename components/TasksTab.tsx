@@ -10,9 +10,12 @@ export interface TaskItem {
   localidade: string;
   recorrenciaTipo: 'Exata' | 'Flexível';
   recorrencia: string;
+  inicioData: string | null; // null = inicio nulo / sem horario fixo
+  duracaoEst: string;
+  terminoCalculado: string;
+  lembreteIa: string; // ex: "A cada 30 min", "A cada 1 hora", "Desativado"
   proxExecucao: string;
   status: 'Concluído' | 'Pendente';
-  duracaoEst: string;
   quantFeita: number;
   subtarefas: { total: number; concluidas: number; itens: string[] };
   propriedadesGanhas: string;
@@ -22,6 +25,47 @@ export interface TaskItem {
   isAtivadaPeriodica?: boolean;
   horarioAgendaAgendado?: string;
 }
+
+// Helper to format date string to YYYY-MM-DDTHH:mm for datetime-local input
+const getNowDateTimeLocal = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+// Helper to calculate End Date & Time from Start Date + Duration
+const calculateTermino = (inicioStr: string | null, duracaoStr: string) => {
+  if (!inicioStr) return 'Nulo (Sem Horário Fixo no Relógio)';
+  const date = new Date(inicioStr);
+  if (isNaN(date.getTime())) return 'Nulo (Sem Horário Fixo no Relógio)';
+
+  let minutesToAdd = 30; // default 30 mins
+  if (duracaoStr.toLowerCase().includes('h')) {
+    const hoursMatch = duracaoStr.match(/(\d+)\s*h/i);
+    const minsMatch = duracaoStr.match(/(\d+)\s*m/i);
+    const hrs = hoursMatch ? parseInt(hoursMatch[1]) : 0;
+    const mins = minsMatch ? parseInt(minsMatch[1]) : 0;
+    minutesToAdd = hrs * 60 + mins;
+  } else if (duracaoStr.toLowerCase().includes('m')) {
+    const minsMatch = duracaoStr.match(/(\d+)\s*m/i);
+    minutesToAdd = minsMatch ? parseInt(minsMatch[1]) : 30;
+  }
+
+  const endDate = new Date(date.getTime() + minutesToAdd * 60 * 1000);
+  const day = endDate.getDate().toString().padStart(2, '0');
+  const month = (endDate.getMonth() + 1).toString().padStart(2, '0');
+  const year = endDate.getFullYear();
+  const hours = endDate.getHours().toString().padStart(2, '0');
+  const minutes = endDate.getMinutes().toString().padStart(2, '0');
+  const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const weekday = weekdays[endDate.getDay()];
+
+  return `${weekday}, ${day}/${month}/${year} às ${hours}:${minutes}`;
+};
 
 const INITIAL_TASKS: TaskItem[] = [
   {
@@ -33,9 +77,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '🏋️ Academia',
     recorrenciaTipo: 'Flexível',
     recorrencia: 'Flexível (A cada 24h)',
+    inicioData: getNowDateTimeLocal(),
+    duracaoEst: '1h 30m',
+    terminoCalculado: calculateTermino(getNowDateTimeLocal(), '1h 30m'),
+    lembreteIa: 'A cada 1 hora',
     proxExecucao: '12:00 PM',
     status: 'Concluído',
-    duracaoEst: '1h 30m',
     quantFeita: 15,
     subtarefas: { total: 3, concluidas: 3, itens: ['Supino', 'Agachamento', 'Biceps'] },
     propriedadesGanhas: '+Força Muscular, +Resistência',
@@ -53,9 +100,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '🚽 Banheiro',
     recorrenciaTipo: 'Exata',
     recorrencia: 'Exata (Qui, 10:00)',
+    inicioData: getNowDateTimeLocal(),
+    duracaoEst: '15m',
+    terminoCalculado: calculateTermino(getNowDateTimeLocal(), '15m'),
+    lembreteIa: 'A cada 30 min',
     proxExecucao: 'Indefinido',
     status: 'Pendente',
-    duracaoEst: '15m',
     quantFeita: 1,
     subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Item Limpeza, +Alimento Armazenado',
@@ -73,9 +123,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '🚽 Banheiro',
     recorrenciaTipo: 'Exata',
     recorrencia: 'Exata (Qui, 10:00)',
+    inicioData: null,
+    duracaoEst: '15m',
+    terminoCalculado: 'Nulo (Sem Horário Fixo no Relógio)',
+    lembreteIa: 'A cada 2 horas',
     proxExecucao: 'Indefinido',
     status: 'Pendente',
-    duracaoEst: '15m',
     quantFeita: 1,
     subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Item Limpeza, +Resistência',
@@ -91,9 +144,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '🏋️ Academia',
     recorrenciaTipo: 'Flexível',
     recorrencia: 'Flexível (A cada 24h)',
+    inicioData: getNowDateTimeLocal(),
+    duracaoEst: '10m',
+    terminoCalculado: calculateTermino(getNowDateTimeLocal(), '10m'),
+    lembreteIa: 'A cada 1 hora',
     proxExecucao: '12:00 PM',
     status: 'Pendente',
-    duracaoEst: '10m',
     quantFeita: 1,
     subtarefas: { total: 3, concluidas: 3, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Força Muscular, +Resistência',
@@ -111,9 +167,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '💻 Escritório',
     recorrenciaTipo: 'Flexível',
     recorrencia: 'Flexível (A cada 12h)',
+    inicioData: getNowDateTimeLocal(),
+    duracaoEst: '72h',
+    terminoCalculado: calculateTermino(getNowDateTimeLocal(), '72h'),
+    lembreteIa: 'A cada 4 horas',
     proxExecucao: '2:00 PM',
     status: 'Concluído',
-    duracaoEst: '1h 00m',
     quantFeita: 8,
     subtarefas: { total: 2, concluidas: 2, itens: ['Revisar Árvores', 'Fazer Leetcode'] },
     propriedadesGanhas: '+Conhecimento Técnico, +Foco',
@@ -129,9 +188,12 @@ const INITIAL_TASKS: TaskItem[] = [
     localidade: '💼 Home Office',
     recorrenciaTipo: 'Exata',
     recorrencia: 'Exata (Dia 1, 09:00)',
+    inicioData: getNowDateTimeLocal(),
+    duracaoEst: '45m',
+    terminoCalculado: calculateTermino(getNowDateTimeLocal(), '45m'),
+    lembreteIa: 'A cada 1 hora',
     proxExecucao: '9:00 AM',
     status: 'Pendente',
-    duracaoEst: '45m',
     quantFeita: 3,
     subtarefas: { total: 2, concluidas: 0, itens: ['Planilha de Gastos', 'Conferir Extrato'] },
     propriedadesGanhas: '+Organização Financeira, +Disciplina',
@@ -139,24 +201,6 @@ const INITIAL_TASKS: TaskItem[] = [
     notas: 'Exportar relatórios',
     isAtivadaPeriodica: true,
     horarioAgendaAgendado: 'Amanhã 09:00 AM'
-  },
-  {
-    id: 7,
-    nome: 'Revisão de Infraestrutura & Cloud',
-    categoria: 'Trabalho',
-    tipo: 'Infra',
-    classe: 'Classe B',
-    localidade: '💻 Escritório',
-    recorrenciaTipo: 'Flexível',
-    recorrencia: 'Flexível (A cada 48h)',
-    proxExecucao: 'Indefinido',
-    status: 'Pendente',
-    duracaoEst: '30m',
-    quantFeita: 4,
-    subtarefas: { total: 2, concluidas: 1, itens: ['Conferir Servidores', 'Logs de Erro'] },
-    propriedadesGanhas: '+Infraestrutura, +Segurança',
-    inerciaAtual: '36h Sem Fazer',
-    notas: 'Check de segurança'
   }
 ];
 
@@ -230,49 +274,58 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   };
 
   // -------------------------------------------------------------
-  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA
+  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA (AVANÇADO)
   // -------------------------------------------------------------
   const handleExecutarAtivacaoInteligente = () => {
     const now = new Date();
-    
-    // Calculate Score for each task to prioritize
-    const scoredTasks = tasks.map(t => {
-      let score = 0;
 
-      // 1. Status: Pendente tem prioridade máxima
+    // 1. Identifica tarefas que JÁ ESTÃO na agenda no período estipulado
+    const existingAgendaTasks = tasks.filter(t => t.isAtivadaPeriodica || t.horarioAgendaAgendado);
+    const countExisting = existingAgendaTasks.length;
+
+    // Quantas tarefas adicionais a IA precisa selecionar para atingir o total desejado
+    const targetTotal = ativarQuantidade;
+    const additionalNeeded = Math.max(0, targetTotal - countExisting);
+
+    // 2. Pontuação de tarefas não ativadas para priorizar
+    const pool = tasks.filter(t => !t.isAtivadaPeriodica);
+
+    const scoredPool = pool.map(t => {
+      let score = 0;
       if (t.status === 'Pendente') score += 50;
 
-      // 2. Tempo de Inércia (quanto mais tempo sem fazer, maior a pontuação)
+      // Inércia acumulada
       if (t.inerciaAtual.includes('36h')) score += 60;
       else if (t.inerciaAtual.includes('24h')) score += 40;
       else if (t.inerciaAtual.includes('18h')) score += 30;
 
-      // 3. Prioridade / Classe
+      // Classe
       if (t.classe === 'Classe A') score += 35;
       else if (t.classe === 'Classe B') score += 20;
-      else score += 10;
 
-      // 4. Considerar Recorrência
-      if (considerarRecorrencia) {
-        if (t.recorrenciaTipo === 'Flexível') score += 15;
+      // Recorrência
+      if (considerarRecorrencia && t.recorrenciaTipo === 'Flexível') {
+        score += 25;
       }
 
       return { task: t, score };
     });
 
-    // Sort by calculated score descending
-    scoredTasks.sort((a, b) => b.score - a.score);
+    scoredPool.sort((a, b) => b.score - a.score);
 
-    // Select top N tasks
-    const selectedTaskIds = new Set(scoredTasks.slice(0, ativarQuantidade).map(item => item.task.id));
+    // Seleciona as adicionais necessárias
+    const selectedAdditional = scoredPool.slice(0, additionalNeeded).map(item => item.task.id);
+    const allActivatedIds = new Set([
+      ...existingAgendaTasks.map(t => t.id),
+      ...selectedAdditional
+    ]);
 
-    // Calculate time spacing across total hours
-    const intervalMinutes = (periodoHoras * 60) / Math.max(1, ativarQuantidade);
-
+    // Intervalo de distribuição na agenda em minutos
+    const intervalMinutes = (periodoHoras * 60) / Math.max(1, targetTotal);
     let currentTime = new Date();
 
     const updatedTasks = tasks.map(t => {
-      if (selectedTaskIds.has(t.id)) {
+      if (allActivatedIds.has(t.id)) {
         currentTime = new Date(currentTime.getTime() + intervalMinutes * 60 * 1000);
         const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const dateStr = currentTime.getHours() < 24 ? 'Hoje' : 'Amanhã';
@@ -280,19 +333,21 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         return {
           ...t,
           isAtivadaPeriodica: true,
-          horarioAgendaAgendado: `${dateStr} ${timeStr}`,
-          proxExecucao: timeStr
+          horarioAgendaAgendado: t.horarioAgendaAgendado || `${dateStr} ${timeStr}`,
+          proxExecucao: t.proxExecucao || timeStr
         };
       }
       return t;
     });
 
     setTasks(updatedTasks);
-    setActivationFeedback(`✨ IA ativou ${ativarQuantidade} tarefas prioritárias distribuídas ao longo das próximas ${periodoHoras} horas na sua agenda!`);
+    setActivationFeedback(
+      `⚡ IA ativou ${targetTotal} tarefas (${countExisting} já existentes na agenda + ${additionalNeeded} selecionadas por prioridade) distribuídas nas próximas ${periodoHoras} horas!`
+    );
 
     setTimeout(() => {
       setActivationFeedback(null);
-    }, 5000);
+    }, 6000);
   };
 
   // -------------------------------------------------------------
@@ -332,9 +387,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const periodicCount = tasks.filter(t => t.isAtivadaPeriodica).length;
 
   // -------------------------------------------------------------
-  // FLUXO DE CRIAÇÃO DE NOVA TAREFA (Modal "+ Nova Tarefa")
+  // FORMULÁRIO DE NOVA TAREFA (MODAL COM MINI CALENDÁRIO)
   // -------------------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Form State
   const [newTaskForm, setNewTaskForm] = useState({
     nome: '',
     categoria: 'Saúde/Fitness' as 'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa',
@@ -343,18 +400,26 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     localidade: '🏋️ Academia',
     recorrenciaTipo: 'Flexível' as 'Exata' | 'Flexível',
     recorrenciaDetalhe: 'A cada 24h',
-    proxExecucao: '12:00 PM',
+    inicioNulo: false,
+    inicioData: getNowDateTimeLocal(),
     duracaoEst: '30m',
+    lembreteIa: 'A cada 1 hora',
     subtasksInput: ['', '', '', '', ''],
     propriedadesGanhas: '+Força Muscular, +Resistência',
     notas: ''
   });
+
+  // Calendar State in Modal
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date());
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskForm.nome.trim()) return;
 
     const validSubtasks = newTaskForm.subtasksInput.filter(s => s.trim() !== '');
+    const inicioStr = newTaskForm.inicioNulo ? null : newTaskForm.inicioData;
+    const terminoCalculado = calculateTermino(inicioStr, newTaskForm.duracaoEst);
+
     const newTask: TaskItem = {
       id: Date.now(),
       nome: newTaskForm.nome,
@@ -364,9 +429,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       localidade: newTaskForm.localidade,
       recorrenciaTipo: newTaskForm.recorrenciaTipo,
       recorrencia: `${newTaskForm.recorrenciaTipo} (${newTaskForm.recorrenciaDetalhe})`,
-      proxExecucao: newTaskForm.proxExecucao || 'Indefinido',
+      inicioData: inicioStr,
+      duracaoEst: newTaskForm.duracaoEst || '30m',
+      terminoCalculado: terminoCalculado,
+      lembreteIa: newTaskForm.lembreteIa || 'Desativado',
+      proxExecucao: inicioStr ? new Date(inicioStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Indefinido',
       status: 'Pendente',
-      duracaoEst: newTaskForm.duracaoEst || '15m',
       quantFeita: 0,
       subtarefas: {
         total: validSubtasks.length || 1,
@@ -388,8 +456,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       localidade: '🏋️ Academia',
       recorrenciaTipo: 'Flexível',
       recorrenciaDetalhe: 'A cada 24h',
-      proxExecucao: '12:00 PM',
+      inicioNulo: false,
+      inicioData: getNowDateTimeLocal(),
       duracaoEst: '30m',
+      lembreteIa: 'A cada 1 hora',
       subtasksInput: ['', '', '', '', ''],
       propriedadesGanhas: '+Força Muscular, +Resistência',
       notas: ''
@@ -469,6 +539,22 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     return status === 'Concluído'
       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30';
+  };
+
+  // MINI CALENDAR DAYS GENERATOR
+  const generateCalendarDays = () => {
+    const days = [];
+    const year = selectedCalendarDate.getFullYear();
+    const month = selectedCalendarDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      // Find tasks occurring on this day (or recurring)
+      const exataCount = tasks.filter(t => t.recorrenciaTipo === 'Exata').length;
+      const flexivelCount = tasks.filter(t => t.recorrenciaTipo === 'Flexível').length;
+      days.push({ day, exataCount, flexivelCount });
+    }
+    return days;
   };
 
   return (
@@ -754,19 +840,24 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </div>
 
                   <h3 className="text-base font-black text-white mb-2 leading-snug">{t.nome}</h3>
-                  <p className="text-xs text-slate-400 font-medium mb-4 flex items-center gap-1.5">
-                    <span>{t.localidade}</span>
-                    <span className="text-slate-600">•</span>
-                    <span>{t.duracaoEst}</span>
-                  </p>
-
-                  {/* Agendamento na Agenda pela IA */}
-                  {t.horarioAgendaAgendado && (
-                    <div className="mb-4 p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/20 text-xs font-bold text-blue-300 flex items-center gap-2">
-                      <span>📅 Agendado na Agenda:</span>
-                      <span className="text-white">{t.horarioAgendaAgendado}</span>
+                  
+                  {/* Horários & Término Calculado */}
+                  <div className="space-y-1 mb-4 bg-[#0b1120] p-3 rounded-2xl border border-slate-800 text-xs">
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span className="text-slate-400 font-bold text-[10px] uppercase">Início:</span>
+                      <span>{t.inicioData ? new Date(t.inicioData).toLocaleString('pt-BR') : 'Nulo (Sem Horário Fixo)'}</span>
                     </div>
-                  )}
+                    <div className="flex justify-between items-center text-[#38bdf8] font-bold">
+                      <span className="text-slate-400 font-bold text-[10px] uppercase">Término:</span>
+                      <span>{t.terminoCalculado}</span>
+                    </div>
+                  </div>
+
+                  {/* Lembrete IA */}
+                  <div className="mb-4 p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs font-bold text-purple-300 flex items-center gap-2">
+                    <span>🤖 Lembrete IA:</span>
+                    <span className="text-white font-mono">{t.lembreteIa}</span>
+                  </div>
 
                   {/* Subtarefas */}
                   <div className="mb-4 space-y-1.5 bg-[#0b1120] p-3 rounded-2xl border border-slate-800">
@@ -813,7 +904,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[90px]">CLASSE</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">LOCALIDADE</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[160px]">RECORRÊNCIA</th>
-                  <th className="py-3 px-3 border-r border-slate-700 min-w-[140px]">AGENDA IA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[180px]">TÉRMINO CALCULADO</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">LEMBRETE IA</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[110px]">STATUS</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[100px]">DURAÇÃO EST.</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[90px] text-center">QUANT. FEITA</th>
@@ -849,8 +941,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-800 text-slate-200">{t.localidade}</td>
                     <td className="py-2.5 px-3 border-r border-slate-800 text-slate-300 text-[11px]">{t.recorrencia}</td>
-                    <td className="py-2.5 px-3 border-r border-slate-800 font-bold text-blue-400 text-[11px]">
-                      {t.horarioAgendaAgendado || t.proxExecucao}
+                    <td className="py-2.5 px-3 border-r border-slate-800 font-bold text-[#38bdf8] text-[11px]">
+                      {t.terminoCalculado}
+                    </td>
+                    <td className="py-2.5 px-3 border-r border-slate-800 text-purple-300 font-mono text-[11px]">
+                      🤖 {t.lembreteIa}
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-800">
                       <button
@@ -884,10 +979,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         )}
       </div>
 
-      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA (3. FLUXO DE CRIAÇÃO) */}
+      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA (COM MINI CALENDÁRIO E CÁLCULO DE TÉRMINO) */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
               <h2 className="text-xl font-black uppercase italic text-white flex items-center gap-2">
                 <span>✨</span> Criar Nova Tarefa
@@ -902,7 +997,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
             <form onSubmit={handleCreateTask} className="space-y-6">
               {/* BLOCO 1: Informações Básicas */}
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">1. Informações Básicas</h3>
                 
                 <div>
@@ -964,10 +1059,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 </div>
               </div>
 
-              {/* BLOCO 2: Tempo e Regra */}
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+              {/* BLOCO 2: Tempo, Regra, Início/Término & Lembrete IA */}
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">2. Tempo e Regra</h3>
 
+                {/* Recorrência Selector */}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -993,44 +1089,110 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Recorrência</label>
-                    <input
-                      type="text"
-                      placeholder="ex: A cada 24h ou Qui, 10:00"
-                      value={newTaskForm.recorrenciaDetalhe}
-                      onChange={e => setNewTaskForm({ ...newTaskForm, recorrenciaDetalhe: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
+                {/* Início, Duração Estimada & Término Calculado */}
+                <div className="space-y-3 bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Horário de Início</label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-amber-400 font-bold">
+                      <input
+                        type="checkbox"
+                        checked={newTaskForm.inicioNulo}
+                        onChange={e => setNewTaskForm({ ...newTaskForm, inicioNulo: e.target.checked })}
+                        className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-amber-500"
+                      />
+                      <span>Início Nulo (Sem Horário Fixo)</span>
+                    </label>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Próxima Execução</label>
+                  {!newTaskForm.inicioNulo && (
                     <input
-                      type="text"
-                      placeholder="ex: 12:00 PM"
-                      value={newTaskForm.proxExecucao}
-                      onChange={e => setNewTaskForm({ ...newTaskForm, proxExecucao: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      type="datetime-local"
+                      value={newTaskForm.inicioData}
+                      onChange={e => setNewTaskForm({ ...newTaskForm, inicioData: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                     />
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Duração Estimada</label>
+                      <input
+                        type="text"
+                        placeholder="ex: 30m, 1h 30m, 72h"
+                        value={newTaskForm.duracaoEst}
+                        onChange={e => setNewTaskForm({ ...newTaskForm, duracaoEst: e.target.value })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Término Calculado (Automático)</label>
+                      <div className="w-full bg-slate-800/90 border border-blue-500/30 rounded-xl px-3 py-2 text-xs text-[#38bdf8] font-bold font-mono">
+                        {calculateTermino(newTaskForm.inicioNulo ? null : newTaskForm.inicioData, newTaskForm.duracaoEst)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lembrete IA Option */}
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                    🤖 Lembrete IA (Notificação & Chamada Contínua)
+                  </label>
+                  <select
+                    value={newTaskForm.lembreteIa}
+                    onChange={e => setNewTaskForm({ ...newTaskForm, lembreteIa: e.target.value })}
+                    className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-2 text-xs text-purple-300 font-bold focus:outline-none focus:border-purple-400"
+                  >
+                    <option value="A cada 15 min">Lembrar a cada 15 minutos</option>
+                    <option value="A cada 30 min">Lembrar a cada 30 minutos</option>
+                    <option value="A cada 1 hora">Lembrar a cada 1 hora</option>
+                    <option value="A cada 2 horas">Lembrar a cada 2 horas</option>
+                    <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
+                    <option value="Desativado">Desativado</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">A IA ligará ou enviará lembretes no período configurado durante tarefas com início nulo ou longa duração.</p>
+                </div>
+
+                {/* MINI CALENDÁRIO COM PONTOS AZUIS (RECORRÊNCIA FIXA) E VERMELHOS (RECORRÊNCIA FLEXÍVEL) */}
+                <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-200">
+                      📅 Agenda do Mês (Visão de Ocupação)
+                    </span>
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <span className="flex items-center gap-1 text-slate-300">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" /> Recorrência Fixa
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-300">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" /> Recorrência Flexível
+                      </span>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Duração Est.</label>
-                    <input
-                      type="text"
-                      placeholder="ex: 30m ou 1h 30m"
-                      value={newTaskForm.duracaoEst}
-                      onChange={e => setNewTaskForm({ ...newTaskForm, duracaoEst: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
+                  <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
+                    <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {generateCalendarDays().map(item => (
+                      <div
+                        key={item.day}
+                        className="p-1.5 rounded-lg bg-slate-800/60 border border-slate-700/40 text-center flex flex-col items-center justify-between min-h-[36px]"
+                      >
+                        <span className="text-[10px] font-bold text-slate-300">{item.day}</span>
+                        <div className="flex items-center gap-0.5 mt-0.5">
+                          {item.exataCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />}
+                          {item.flexivelCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
 
               {/* BLOCO 3: Contexto (Localidade e Subtasks) */}
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">3. Contexto</h3>
 
                 <div>
@@ -1066,7 +1228,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               </div>
 
               {/* BLOCO 4: Resultados e Notas */}
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">4. Resultados e Notas</h3>
 
                 <div>
