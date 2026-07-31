@@ -263,26 +263,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [isPeriodicActivationActive, setIsPeriodicActivationActive] = useState<boolean>(false);
   const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
 
-  // Supabase Cloud Sync logic (Mobile <-> PC Realtime Sync)
+  // Supabase Cloud Sync logic (Mobile <-> PC Realtime Sync & Relogin Persistence)
   const syncTasksWithCloud = async () => {
     setIsSyncing(true);
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('reminders')
         .select('*')
         .like('title', '[TASK_ITEM]%')
         .order('created_at', { ascending: false });
-
-      if (user?.id) {
-        query = supabase
-          .from('reminders')
-          .select('*')
-          .like('title', '[TASK_ITEM]%')
-          .or(`owner_id.eq.${user.id},owner_id.is.null`)
-          .order('created_at', { ascending: false });
-      }
-
-      const { data, error } = await query;
 
       if (!error && data && data.length > 0) {
         const cloudTasks: TaskItem[] = [];
@@ -300,9 +289,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
         if (cloudTasks.length > 0) {
           setTasks(prev => {
             const taskMap = new Map<string, TaskItem>();
+            // Add cloud tasks first (newest tasks from cloud take priority)
             cloudTasks.forEach(ct => {
               taskMap.set(ct.nome.toLowerCase().trim(), ct);
             });
+            // Preserve local tasks not present in cloud
             prev.forEach(pt => {
               const key = pt.nome.toLowerCase().trim();
               if (!taskMap.has(key)) {
@@ -548,7 +539,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date());
   const [viewDayTimeline, setViewDayTimeline] = useState<number | null>(null);
 
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskForm.nome.trim()) return;
 
@@ -582,17 +573,23 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       notas: newTaskForm.notas || '--'
     };
 
-    updateAndSaveTasks([newTask, ...tasks]);
+    const updated = [newTask, ...tasks];
+    updateAndSaveTasks(updated);
 
-    // Save to Supabase cloud
+    // Save to Supabase cloud WITH AWAIT to prevent data loss on relogin
     try {
-      supabase.from('reminders').insert({
+      const { error } = await supabase.from('reminders').insert({
         owner_id: user?.id || null,
         title: `[TASK_ITEM] ${newTask.nome}`,
         notes: JSON.stringify(newTask),
         trigger_at: new Date().toISOString()
-      }).then();
-    } catch (e) {}
+      });
+      if (error) {
+        console.error('Error inserting task to Supabase:', error);
+      }
+    } catch (e) {
+      console.error('Failed to insert task to Supabase:', e);
+    }
 
     setShowCreateModal(false);
     setNewTaskForm({
