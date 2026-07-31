@@ -1232,14 +1232,17 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
                   // Sync newly created task by AI directly to the cloud user_tasks table
                   try {
-                    const keys = Object.keys(localStorage);
-                    let uid = localStorage.getItem('parceiro_user_fp') || 'anon';
-                    for (const key of keys) {
-                      if (key.includes('supabase') && key.includes('auth')) {
-                        const val = JSON.parse(localStorage.getItem(key) || '{}');
-                        if (val?.user?.id) uid = val.user.id;
+                    const uid = user?.id || (() => {
+                      const keys = Object.keys(localStorage);
+                      let id = localStorage.getItem('parceiro_user_fp') || 'anon';
+                      for (const key of keys) {
+                        if (key.includes('supabase') && key.includes('auth')) {
+                          const val = JSON.parse(localStorage.getItem(key) || '{}');
+                          if (val?.user?.id) id = val.user.id;
+                        }
                       }
-                    }
+                      return id;
+                    })();
                     supabase.from('user_tasks').upsert({
                       user_id: uid,
                       task_name: newTask.nome,
@@ -1263,24 +1266,9 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     }
                   } catch(e) {}
 
-                  if (currentTasks.length === 0) {
-                    currentTasks = [
-                      { id: 1, nome: 'Treino de Musculação', categoria: 'Saúde/Fitness', status: 'Concluído', duracaoEst: '1h 30m', lembreteIa: 'A cada 30 min', isAtivadaPeriodica: true },
-                      { id: 2, nome: 'Limpar Pia Banheiro', categoria: 'Casa', status: 'Pendente', duracaoEst: '15m', lembreteIa: 'A cada 5 min', isAtivadaPeriodica: true },
-                      { id: 3, nome: 'Limpar Pia Banheiro', categoria: 'Casa', status: 'Pendente', duracaoEst: '15m', lembreteIa: 'A cada 2 horas' },
-                      { id: 4, nome: 'Jogar Lixo Banheiro', categoria: 'Saúde/Fitness', status: 'Pendente', duracaoEst: '10m', lembreteIa: 'A cada 3 min', isAtivadaPeriodica: true },
-                      { id: 5, nome: 'Estudo de Algoritmos Avançados', categoria: 'Estudos', status: 'Concluído', duracaoEst: '72h', lembreteIa: 'A cada 24h' },
-                      { id: 6, nome: 'Organização Financeira Mensal', categoria: 'Trabalho', status: 'Pendente', duracaoEst: '45m', lembreteIa: 'A cada 15 min', isAtivadaPeriodica: true }
-                    ];
-                  }
-
-                  const taskListStr = currentTasks.map((t, idx) =>
-                    `${idx + 1}. "${t.nome}" (Categoria: ${t.categoria}, Status: ${t.status}, Duração: ${t.duracaoEst}, Início: ${t.inicioData || 'Nulo'}, Lembrete IA: ${t.lembreteIa}, Ativada Periódica: ${t.isAtivadaPeriodica ? 'Sim' : 'Não'})`
-                  ).join('\n');
-
-                  result = `DETALHES DAS TAREFAS REGISTRADAS NO BANCO:\n${taskListStr}\nINSTRUÇÃO PARA A IA: Responda ao usuário com estes dados exatos sobre as tarefas dele!`;
+                  result = `Detalhes das tarefas: ${JSON.stringify(currentTasks)}`;
                 } else if (fc.name === 'update_task_ai') {
-                  const { task_name, status, lembreteIa, duracaoEst } = fc.args as any;
+                  const { task_name, status, recorrenciaDetalhe, duracaoEst, lembreteIa } = fc.args as any;
                   let currentTasks: any[] = [];
                   try {
                     const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
@@ -1293,6 +1281,7 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                       updatedTargetTask = {
                         ...t,
                         status: status || t.status,
+                        recorrencia: recorrenciaDetalhe || t.recorrencia,
                         lembreteIa: lembreteIa || t.lembreteIa,
                         duracaoEst: duracaoEst || t.duracaoEst
                       };
@@ -1307,15 +1296,18 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   // Sync single updated task to the cloud user_tasks table
                   if (updatedTargetTask) {
                     try {
-                      // Derive a user id from supabase
-                      const keys = Object.keys(localStorage);
-                      let uid = localStorage.getItem('parceiro_user_fp') || 'anon';
-                      for (const key of keys) {
-                        if (key.includes('supabase') && key.includes('auth')) {
-                          const val = JSON.parse(localStorage.getItem(key) || '{}');
-                          if (val?.user?.id) uid = val.user.id;
+                      const uid = user?.id || (() => {
+                        const keys = Object.keys(localStorage);
+                        let id = localStorage.getItem('parceiro_user_fp') || 'anon';
+                        for (const key of keys) {
+                          if (key.includes('supabase') && key.includes('auth')) {
+                            const val = JSON.parse(localStorage.getItem(key) || '{}');
+                            if (val?.user?.id) id = val.user.id;
+                          }
                         }
-                      }
+                        return id;
+                      })();
+
                       supabase.from('user_tasks').upsert({
                         user_id: uid,
                         task_name: updatedTargetTask.nome,
