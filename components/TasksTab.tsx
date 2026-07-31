@@ -111,7 +111,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '1h 30m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '1h 30m'),
-    lembreteIa: 'A cada 30 min (1/3 - 33% da duração)',
+    lembreteIa: 'A cada 30 min',
     proxExecucao: '12:00 PM',
     status: 'Concluído',
     quantFeita: 15,
@@ -119,8 +119,7 @@ const INITIAL_TASKS: TaskItem[] = [
     propriedadesGanhas: '+Força Muscular, +Resistência',
     inerciaAtual: '--',
     notas: 'Foco no Supino',
-    isAtivadaPeriodica: true,
-    horarioAgendaAgendado: 'Hoje 12:00 PM'
+    isAtivadaPeriodica: false
   },
   {
     id: 2,
@@ -134,7 +133,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '15m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '15m'),
-    lembreteIa: 'A cada 5 min (1/3 - 33% da duração)',
+    lembreteIa: 'A cada 5 min',
     proxExecucao: 'Indefinido',
     status: 'Pendente',
     quantFeita: 1,
@@ -142,8 +141,7 @@ const INITIAL_TASKS: TaskItem[] = [
     propriedadesGanhas: '+Item Limpeza, +Alimento Armazenado',
     inerciaAtual: '18h Sem Fazer',
     notas: 'Usar desinfetante',
-    isAtivadaPeriodica: true,
-    horarioAgendaAgendado: 'Hoje 15:30 PM'
+    isAtivadaPeriodica: false
   },
   {
     id: 3,
@@ -164,7 +162,8 @@ const INITIAL_TASKS: TaskItem[] = [
     subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] },
     propriedadesGanhas: '+Item Limpeza, +Resistência',
     inerciaAtual: '--',
-    notas: 'Foco no Supino'
+    notas: 'Foco no Supino',
+    isAtivadaPeriodica: false
   },
   {
     id: 4,
@@ -178,7 +177,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '10m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '10m'),
-    lembreteIa: 'A cada 3 min (1/3 - 33% da duração)',
+    lembreteIa: 'A cada 3 min',
     proxExecucao: '12:00 PM',
     status: 'Pendente',
     quantFeita: 1,
@@ -186,8 +185,7 @@ const INITIAL_TASKS: TaskItem[] = [
     propriedadesGanhas: '+Força Muscular, +Resistência',
     inerciaAtual: '--',
     notas: '--',
-    isAtivadaPeriodica: true,
-    horarioAgendaAgendado: 'Hoje 18:00 PM'
+    isAtivadaPeriodica: false
   },
   {
     id: 5,
@@ -201,14 +199,15 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '72h',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '72h'),
-    lembreteIa: 'A cada 24h (1/3 - 33% da duração)',
+    lembreteIa: 'A cada 24h',
     proxExecucao: '2:00 PM',
     status: 'Concluído',
     quantFeita: 8,
     subtarefas: { total: 2, concluidas: 2, itens: ['Revisar Árvores', 'Fazer Leetcode'] },
     propriedadesGanhas: '+Conhecimento Técnico, +Foco',
     inerciaAtual: '--',
-    notas: 'Anotar complexidade'
+    notas: 'Anotar complexidade',
+    isAtivadaPeriodica: false
   },
   {
     id: 6,
@@ -222,7 +221,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '45m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '45m'),
-    lembreteIa: 'A cada 15 min (1/3 - 33% da duração)',
+    lembreteIa: 'A cada 15 min',
     proxExecucao: '9:00 AM',
     status: 'Pendente',
     quantFeita: 3,
@@ -230,8 +229,7 @@ const INITIAL_TASKS: TaskItem[] = [
     propriedadesGanhas: '+Organização Financeira, +Disciplina',
     inerciaAtual: '24h Sem Fazer',
     notas: 'Exportar relatórios',
-    isAtivadaPeriodica: true,
-    horarioAgendaAgendado: 'Amanhã 09:00 AM'
+    isAtivadaPeriodica: false
   }
 ];
 
@@ -272,11 +270,18 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setTasks(parsed);
+        } else {
+          localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(INITIAL_TASKS));
         }
+      } else {
+        localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(INITIAL_TASKS));
       }
+
       const savedPeriodic = localStorage.getItem('parceiro_virtual_periodic_active');
       if (savedPeriodic === 'true') {
         setIsPeriodicActivationActive(true);
+      } else {
+        setIsPeriodicActivationActive(false);
       }
     } catch (e) {}
   }, []);
@@ -408,7 +413,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             proxExecucao: t.proxExecucao || timeStr
           };
         }
-        return t;
+        return { ...t, isAtivadaPeriodica: false };
       });
 
       updateAndSaveTasks(updatedTasks);
@@ -446,7 +451,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const emAbertoCount = tasks.filter(t => t.status === 'Pendente').length;
   const concluidasCount = tasks.filter(t => t.status === 'Concluído').length + comboCompletedCount;
   const falhasCount = tasks.filter(t => t.inerciaAtual.includes('24h') || t.inerciaAtual.includes('36h')).length;
-  const periodicCount = tasks.filter(t => t.isAtivadaPeriodica).length;
+  const periodicCount = isPeriodicActivationActive ? tasks.filter(t => t.isAtivadaPeriodica).length : 0;
 
   // Form State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -554,12 +559,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       const matchesCategory = filterCategory === 'TODAS' || t.categoria === filterCategory;
       const matchesStatus = filterStatus === 'TODOS' || t.status === filterStatus;
       const matchesTipo = filterTipo === 'TODOS' || t.tipo === filterTipo;
-      const matchesPeriodic = !onlyPeriodicFilter || t.isAtivadaPeriodica;
+      const matchesPeriodic = !onlyPeriodicFilter || (isPeriodicActivationActive && t.isAtivadaPeriodica);
 
       return matchesSearch && matchesCategory && matchesStatus && matchesTipo && matchesPeriodic;
     }).sort((a, b) => {
-      if (a.isAtivadaPeriodica && !a.isAdiada && (!b.isAtivadaPeriodica || b.isAdiada)) return -1;
-      if ((!a.isAtivadaPeriodica || a.isAdiada) && b.isAtivadaPeriodica && !b.isAdiada) return 1;
+      if (isPeriodicActivationActive && a.isAtivadaPeriodica && !a.isAdiada && (!b.isAtivadaPeriodica || b.isAdiada)) return -1;
+      if (isPeriodicActivationActive && (!a.isAtivadaPeriodica || a.isAdiada) && b.isAtivadaPeriodica && !b.isAdiada) return 1;
 
       if (a.isAdiada && !b.isAdiada) return 1;
       if (!a.isAdiada && b.isAdiada) return -1;
@@ -909,7 +914,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 className={`p-6 rounded-3xl border transition-all duration-300 relative flex flex-col justify-between ${
                   t.isAdiada
                     ? 'bg-[#180e29]/70 border-purple-500/30 opacity-75'
-                    : t.isAtivadaPeriodica
+                    : (isPeriodicActivationActive && t.isAtivadaPeriodica)
                     ? 'bg-gradient-to-b from-[#1e1b4b]/60 to-[#0f172a] border-amber-500/40 shadow-xl shadow-amber-500/5'
                     : 'bg-[#111827] border-[#1f2937] hover:border-slate-700'
                 }`}
@@ -918,7 +923,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                     <span>⏩ Tarefa Adiada (Fila Final)</span>
                   </div>
-                ) : t.isAtivadaPeriodica ? (
+                ) : (isPeriodicActivationActive && t.isAtivadaPeriodica) ? (
                   <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                     <span>⚡ Ativação Periódica</span>
                   </div>
@@ -1018,12 +1023,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <tr
                     key={t.id}
                     className={`hover:bg-slate-800/40 transition-colors ${
-                      t.isAdiada ? 'bg-purple-950/20' : t.isAtivadaPeriodica ? 'bg-amber-500/5' : idx % 2 === 0 ? 'bg-[#111827]' : 'bg-[#0f172a]'
+                      t.isAdiada ? 'bg-purple-950/20' : (isPeriodicActivationActive && t.isAtivadaPeriodica) ? 'bg-amber-500/5' : idx % 2 === 0 ? 'bg-[#111827]' : 'bg-[#0f172a]'
                     }`}
                   >
                     <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-400">{t.id}</td>
                     <td className="py-2.5 px-4 border-r border-slate-800 font-bold text-white flex items-center gap-2">
-                      {t.isAdiada ? <span className="text-purple-400 text-xs">⏩</span> : t.isAtivadaPeriodica && <span className="text-amber-400 text-xs">⚡</span>}
+                      {t.isAdiada ? <span className="text-purple-400 text-xs">⏩</span> : (isPeriodicActivationActive && t.isAtivadaPeriodica) && <span className="text-amber-400 text-xs">⚡</span>}
                       <span>{t.nome}</span>
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-800">

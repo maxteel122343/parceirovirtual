@@ -1129,12 +1129,26 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   addConnectionLog('success', `Lembrete "${reminder_title}" marcado como concluído.`);
                 } else if (fc.name === 'create_task_ai') {
                   const { nome, categoria, classe, tipo, recorrenciaDetalhe, duracaoEst, lembreteIa, localidade } = fc.args as any;
-                  let currentTasks: any[] = [];
-                  try {
-                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
-                    if (saved) currentTasks = JSON.parse(saved);
-                  } catch(e) {}
+                  
+                  const getTasksFromStorage = () => {
+                    try {
+                      const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                      if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                      }
+                    } catch(e) {}
+                    return [
+                      { id: 1, nome: 'Treino de Musculação', categoria: 'Saúde/Fitness', tipo: 'Normal', classe: 'Classe A', localidade: '🏋️ Academia', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 24h)', inicioData: new Date().toISOString(), duracaoEst: '1h 30m', terminoCalculado: 'Hoje 13:30', lembreteIa: 'A cada 30 min', proxExecucao: '12:00 PM', status: 'Concluído', quantFeita: 15, subtarefas: { total: 3, concluidas: 3, itens: ['Supino', 'Agachamento'] }, propriedadesGanhas: '+Força Muscular', inerciaAtual: '--', notas: 'Foco', isAtivadaPeriodica: true },
+                      { id: 2, nome: 'Limpar Pia Banheiro', categoria: 'Casa', tipo: 'Manutenção', classe: 'Classe B', localidade: '🚽 Banheiro', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Qui, 10:00)', inicioData: new Date().toISOString(), duracaoEst: '15m', terminoCalculado: 'Hoje 15:45', lembreteIa: 'A cada 5 min', proxExecucao: 'Indefinido', status: 'Pendente', quantFeita: 1, subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Limpeza', inerciaAtual: '18h Sem Fazer', notas: 'Desinfetante', isAtivadaPeriodica: true },
+                      { id: 3, nome: 'Limpar Pia Banheiro', categoria: 'Casa', tipo: 'Normal', classe: 'Classe B', localidade: '🚽 Banheiro', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Qui, 10:00)', inicioData: null, duracaoEst: '15m', terminoCalculado: 'Nulo', lembreteIa: 'A cada 2 horas', proxExecucao: 'Indefinido', status: 'Pendente', quantFeita: 1, subtarefas: { total: 1, concluidas: 0, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Resistência', inerciaAtual: '--', notas: 'Foco' },
+                      { id: 4, nome: 'Jogar Lixo Banheiro', categoria: 'Saúde/Fitness', tipo: 'Normal', classe: 'Classe A', localidade: '🏋️ Academia', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 24h)', inicioData: new Date().toISOString(), duracaoEst: '10m', terminoCalculado: 'Hoje 18:10', lembreteIa: 'A cada 3 min', proxExecucao: '12:00 PM', status: 'Pendente', quantFeita: 1, subtarefas: { total: 3, concluidas: 3, itens: ['Jogar Lixo'] }, propriedadesGanhas: '+Força', inerciaAtual: '--', notas: '--', isAtivadaPeriodica: true },
+                      { id: 5, nome: 'Estudo de Algoritmos Avançados', categoria: 'Estudos', tipo: 'Normal', classe: 'Classe A', localidade: '💻 Escritório', recorrenciaTipo: 'Flexível', recorrencia: 'Flexível (A cada 12h)', inicioData: new Date().toISOString(), duracaoEst: '72h', terminoCalculado: 'Segunda 15:00', lembreteIa: 'A cada 24h', proxExecucao: '2:00 PM', status: 'Concluído', quantFeita: 8, subtarefas: { total: 2, concluidas: 2, itens: ['Leetcode'] }, propriedadesGanhas: '+Técnico', inerciaAtual: '--', notas: 'Complexidade' },
+                      { id: 6, nome: 'Organização Financeira Mensal', categoria: 'Trabalho', tipo: 'Organização', classe: 'Classe A', localidade: '💼 Home Office', recorrenciaTipo: 'Exata', recorrencia: 'Exata (Dia 1, 09:00)', inicioData: new Date().toISOString(), duracaoEst: '45m', terminoCalculado: 'Amanhã 09:45', lembreteIa: 'A cada 15 min', proxExecucao: '9:00 AM', status: 'Pendente', quantFeita: 3, subtarefas: { total: 2, concluidas: 0, itens: ['Gastos'] }, propriedadesGanhas: '+Financeira', inerciaAtual: '24h Sem Fazer', notas: 'Relatórios', isAtivadaPeriodica: true }
+                    ];
+                  };
 
+                  const currentTasks = getTasksFromStorage();
                   const nowStr = new Date().toISOString().slice(0, 16);
                   const newTask = {
                     id: Date.now(),
@@ -1171,23 +1185,34 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     }).then();
                   }
 
-                  result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso no banco de dados e sincronizada em todos os dispositivos! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está salva na sua lista e agenda!`;
+                  result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso no banco de dados e sincronizada na lista e no feed de tarefas! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está aparecendo no feed de tarefas!`;
                   addConnectionLog('success', `IA criou e salvou a tarefa "${nome}".`);
                 } else if (fc.name === 'query_task_details') {
                   let currentTasks: any[] = [];
                   try {
                     const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
-                    if (saved) currentTasks = JSON.parse(saved);
+                    if (saved) {
+                      const parsed = JSON.parse(saved);
+                      if (Array.isArray(parsed) && parsed.length > 0) currentTasks = parsed;
+                    }
                   } catch(e) {}
 
-                  if (currentTasks.length > 0) {
-                    const taskListStr = currentTasks.map((t, idx) =>
-                      `${idx + 1}. "${t.nome}" (Categoria: ${t.categoria}, Status: ${t.status}, Duração: ${t.duracaoEst}, Início: ${t.inicioData || 'Nulo'}, Lembrete IA: ${t.lembreteIa}, Ativada Periódica: ${t.isAtivadaPeriodica ? 'Sim' : 'Não'})`
-                    ).join('\n');
-                    result = `DETALHES DAS TAREFAS REGISTRADAS NO BANCO:\n${taskListStr}\nINSTRUÇÃO PARA A IA: Responda ao usuário com estes dados exatos sobre as tarefas dele!`;
-                  } else {
-                    result = `Nenhuma tarefa cadastrada no momento.`;
+                  if (currentTasks.length === 0) {
+                    currentTasks = [
+                      { id: 1, nome: 'Treino de Musculação', categoria: 'Saúde/Fitness', status: 'Concluído', duracaoEst: '1h 30m', lembreteIa: 'A cada 30 min', isAtivadaPeriodica: true },
+                      { id: 2, nome: 'Limpar Pia Banheiro', categoria: 'Casa', status: 'Pendente', duracaoEst: '15m', lembreteIa: 'A cada 5 min', isAtivadaPeriodica: true },
+                      { id: 3, nome: 'Limpar Pia Banheiro', categoria: 'Casa', status: 'Pendente', duracaoEst: '15m', lembreteIa: 'A cada 2 horas' },
+                      { id: 4, nome: 'Jogar Lixo Banheiro', categoria: 'Saúde/Fitness', status: 'Pendente', duracaoEst: '10m', lembreteIa: 'A cada 3 min', isAtivadaPeriodica: true },
+                      { id: 5, nome: 'Estudo de Algoritmos Avançados', categoria: 'Estudos', status: 'Concluído', duracaoEst: '72h', lembreteIa: 'A cada 24h' },
+                      { id: 6, nome: 'Organização Financeira Mensal', categoria: 'Trabalho', status: 'Pendente', duracaoEst: '45m', lembreteIa: 'A cada 15 min', isAtivadaPeriodica: true }
+                    ];
                   }
+
+                  const taskListStr = currentTasks.map((t, idx) =>
+                    `${idx + 1}. "${t.nome}" (Categoria: ${t.categoria}, Status: ${t.status}, Duração: ${t.duracaoEst}, Início: ${t.inicioData || 'Nulo'}, Lembrete IA: ${t.lembreteIa}, Ativada Periódica: ${t.isAtivadaPeriodica ? 'Sim' : 'Não'})`
+                  ).join('\n');
+
+                  result = `DETALHES DAS TAREFAS REGISTRADAS NO BANCO:\n${taskListStr}\nINSTRUÇÃO PARA A IA: Responda ao usuário com estes dados exatos sobre as tarefas dele!`;
                 } else if (fc.name === 'update_task_ai') {
                   const { task_name, status, lembreteIa, duracaoEst } = fc.args as any;
                   let currentTasks: any[] = [];
