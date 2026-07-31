@@ -213,7 +213,6 @@ interface TasksTabProps {
 export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
   const [viewMode, setViewMode] = useState<'PLANILHA' | 'CARDS'>('CARDS');
-  const [topTab, setTopTab] = useState<'HOJE' | 'LOCALIDADES' | 'ESTATÍSTICAS'>('HOJE');
   
   // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
@@ -254,14 +253,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     };
   }, [isComboActive]);
 
-  const startComboSession = (cat: 'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa') => {
-    setComboCategory(cat);
-    setComboSeconds(0);
-    setComboCompletedCount(0);
-    setComboEarnedProperties([]);
-    setIsComboActive(true);
-  };
-
   const endComboSession = () => {
     setIsComboActive(false);
   };
@@ -274,53 +265,40 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   };
 
   // -------------------------------------------------------------
-  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA (AVANÇADO)
+  // ALGORITMO INTELIGENTE DE ATIVAÇÃO PERIÓDICA DA IA
   // -------------------------------------------------------------
   const handleExecutarAtivacaoInteligente = () => {
-    const now = new Date();
-
-    // 1. Identifica tarefas que JÁ ESTÃO na agenda no período estipulado
     const existingAgendaTasks = tasks.filter(t => t.isAtivadaPeriodica || t.horarioAgendaAgendado);
     const countExisting = existingAgendaTasks.length;
-
-    // Quantas tarefas adicionais a IA precisa selecionar para atingir o total desejado
     const targetTotal = ativarQuantidade;
     const additionalNeeded = Math.max(0, targetTotal - countExisting);
 
-    // 2. Pontuação de tarefas não ativadas para priorizar
     const pool = tasks.filter(t => !t.isAtivadaPeriodica);
 
     const scoredPool = pool.map(t => {
       let score = 0;
       if (t.status === 'Pendente') score += 50;
 
-      // Inércia acumulada
       if (t.inerciaAtual.includes('36h')) score += 60;
       else if (t.inerciaAtual.includes('24h')) score += 40;
       else if (t.inerciaAtual.includes('18h')) score += 30;
 
-      // Classe
       if (t.classe === 'Classe A') score += 35;
       else if (t.classe === 'Classe B') score += 20;
 
-      // Recorrência
-      if (considerarRecorrencia && t.recorrenciaTipo === 'Flexível') {
-        score += 25;
-      }
+      if (considerarRecorrencia && t.recorrenciaTipo === 'Flexível') score += 25;
 
       return { task: t, score };
     });
 
     scoredPool.sort((a, b) => b.score - a.score);
 
-    // Seleciona as adicionais necessárias
     const selectedAdditional = scoredPool.slice(0, additionalNeeded).map(item => item.task.id);
     const allActivatedIds = new Set([
       ...existingAgendaTasks.map(t => t.id),
       ...selectedAdditional
     ]);
 
-    // Intervalo de distribuição na agenda em minutos
     const intervalMinutes = (periodoHoras * 60) / Math.max(1, targetTotal);
     let currentTime = new Date();
 
@@ -350,36 +328,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     }, 6000);
   };
 
-  // -------------------------------------------------------------
-  // PERFIL DE PROPRIEDADES E ESTATÍSTICAS
-  // -------------------------------------------------------------
-  const calculateProperties = () => {
-    const propMap: Record<string, number> = {
-      'Força Muscular': 45,
-      'Resistência': 38,
-      'Conhecimento Técnico': 60,
-      'Organização Financeira': 30,
-      'Item Limpeza': 25,
-      'Alimento Armazenado': 15,
-      'Foco': 50,
-      'Disciplina': 40
-    };
-
-    tasks.filter(t => t.status === 'Concluído').forEach(t => {
-      const props = t.propriedadesGanhas.split(',').map(p => p.trim().replace('+', ''));
-      props.forEach(p => {
-        if (p) propMap[p] = (propMap[p] || 0) + 10;
-      });
-    });
-
-    comboEarnedProperties.forEach(p => {
-      if (p) propMap[p] = (propMap[p] || 0) + 15;
-    });
-
-    return propMap;
-  };
-
-  const propertiesData = calculateProperties();
   const totalCount = tasks.length;
   const emAbertoCount = tasks.filter(t => t.status === 'Pendente').length;
   const concluidasCount = tasks.filter(t => t.status === 'Concluído').length + comboCompletedCount;
@@ -387,7 +335,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const periodicCount = tasks.filter(t => t.isAtivadaPeriodica).length;
 
   // -------------------------------------------------------------
-  // FORMULÁRIO DE NOVA TAREFA (MODAL COM MINI CALENDÁRIO)
+  // FORMULÁRIO DE NOVA TAREFA (MODAL COM MINI CALENDÁRIO INTERATIVO)
   // -------------------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -411,6 +359,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
   // Calendar State in Modal
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date());
+  const [viewDayTimeline, setViewDayTimeline] = useState<number | null>(null);
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -500,7 +449,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
       return matchesSearch && matchesCategory && matchesStatus && matchesTipo && matchesPeriodic;
     }).sort((a, b) => {
-      // Periodic Activated tasks appear first in Feed
       if (a.isAtivadaPeriodica && !b.isAtivadaPeriodica) return -1;
       if (!a.isAtivadaPeriodica && b.isAtivadaPeriodica) return 1;
 
@@ -541,21 +489,38 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30';
   };
 
-  // MINI CALENDAR DAYS GENERATOR
+  // -------------------------------------------------------------
+  // GERADOR DINÂMICO DE DIAS DO CALENDÁRIO COM RECORRÊNCIA REPETITIVA
+  // -------------------------------------------------------------
   const generateCalendarDays = () => {
     const days = [];
     const year = selectedCalendarDate.getFullYear();
     const month = selectedCalendarDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+    // Parse current recurrence interval in form if available (ex: "72h" -> 3 days interval)
+    let formRecurrenceIntervalDays = 1;
+    if (newTaskForm.recorrenciaDetalhe.toLowerCase().includes('72h')) formRecurrenceIntervalDays = 3;
+    else if (newTaskForm.recorrenciaDetalhe.toLowerCase().includes('48h')) formRecurrenceIntervalDays = 2;
+
     for (let day = 1; day <= daysInMonth; day++) {
-      // Find tasks occurring on this day (or recurring)
-      const exataCount = tasks.filter(t => t.recorrenciaTipo === 'Exata').length;
-      const flexivelCount = tasks.filter(t => t.recorrenciaTipo === 'Flexível').length;
+      let exataCount = tasks.filter(t => t.recorrenciaTipo === 'Exata').length;
+      let flexivelCount = tasks.filter(t => t.recorrenciaTipo === 'Flexível').length;
+
+      // Apply dynamic recurrence dots for form input
+      if (newTaskForm.recorrenciaTipo === 'Exata' && (day % formRecurrenceIntervalDays === 0 || day === 1)) {
+        exataCount += 1;
+      } else if (newTaskForm.recorrenciaTipo === 'Flexível' && (day % formRecurrenceIntervalDays === 0 || day === 1)) {
+        flexivelCount += 1;
+      }
+
       days.push({ day, exataCount, flexivelCount });
     }
     return days;
   };
+
+  // Hours array for day timeline view (00:00 to 23:00)
+  const hoursArray = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
   return (
     <div className="w-full max-w-7xl mx-auto rounded-3xl overflow-hidden shadow-2xl border border-[#1e293b] bg-[#0b1120] text-slate-100 transition-all font-sans">
@@ -620,7 +585,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         </div>
 
         <div className="flex items-center gap-2 md:gap-3 flex-wrap">
-          {/* Selector de Modo de Visualização (Planilha vs Cards/Feed) */}
           <div className="flex items-center bg-[#1f2937]/80 p-1 rounded-2xl border border-slate-700/60 shadow-inner">
             <button
               onClick={() => setViewMode('PLANILHA')}
@@ -640,7 +604,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             </button>
           </div>
 
-          {/* Botão de Filtro Rápido Ativação Periódica */}
           <button
             onClick={() => setOnlyPeriodicFilter(!onlyPeriodicFilter)}
             className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 border ${
@@ -652,7 +615,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             <span>⚡</span> ATIVAÇÃO PERIÓDICA ({periodicCount})
           </button>
 
-          {/* Botão Criar Nova Tarefa (+) */}
           <button
             onClick={() => setShowCreateModal(true)}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-blue-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
@@ -665,7 +627,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       {/* FEED & CONTROL AREA */}
       <div className="p-6 md:p-8 space-y-6">
         
-        {/* BANNER DE CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA (LAYOUT EXATO DA IMAGEM) */}
+        {/* BANNER DE CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA */}
         <div className="p-6 rounded-3xl bg-gradient-to-r from-[#111827] via-[#1f2937]/50 to-[#111827] border border-amber-500/30 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
             <div className="flex items-center gap-2">
@@ -684,7 +646,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-800">
-            {/* Input Controls */}
             <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-200">
               <span className="text-slate-400 uppercase tracking-wider text-[11px]">ATIVAR</span>
               <input
@@ -719,7 +680,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               </label>
             </div>
 
-            {/* Botão de Disparo da Ativação Inteligente */}
             <button
               onClick={handleExecutarAtivacaoInteligente}
               className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all text-xs flex items-center gap-2"
@@ -772,7 +732,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap text-xs">
-            {/* Status Dropdown */}
             <select
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
@@ -783,7 +742,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               <option value="Concluído">Concluído</option>
             </select>
 
-            {/* Tipo Dropdown */}
             <select
               value={filterTipo}
               onChange={e => setFilterTipo(e.target.value)}
@@ -797,7 +755,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               <option value="Intervalo">Intervalo</option>
             </select>
 
-            {/* Ordenar Dropdown */}
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as any)}
@@ -822,7 +779,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                     : 'bg-[#111827] border-[#1f2937] hover:border-slate-700'
                 }`}
               >
-                {/* Badge Ativação Periódica no Card */}
                 {t.isAtivadaPeriodica && (
                   <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                     <span>⚡ Ativação Periódica</span>
@@ -841,7 +797,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
                   <h3 className="text-base font-black text-white mb-2 leading-snug">{t.nome}</h3>
                   
-                  {/* Horários & Término Calculado */}
                   <div className="space-y-1 mb-4 bg-[#0b1120] p-3 rounded-2xl border border-slate-800 text-xs">
                     <div className="flex justify-between items-center text-slate-300">
                       <span className="text-slate-400 font-bold text-[10px] uppercase">Início:</span>
@@ -853,13 +808,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                     </div>
                   </div>
 
-                  {/* Lembrete IA */}
                   <div className="mb-4 p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs font-bold text-purple-300 flex items-center gap-2">
                     <span>🤖 Lembrete IA:</span>
                     <span className="text-white font-mono">{t.lembreteIa}</span>
                   </div>
 
-                  {/* Subtarefas */}
                   <div className="mb-4 space-y-1.5 bg-[#0b1120] p-3 rounded-2xl border border-slate-800">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
                       Subtarefas ({t.subtarefas.concluidas}/{t.subtarefas.total})
@@ -872,7 +825,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                     ))}
                   </div>
 
-                  {/* Propriedades Ganhas */}
                   <div className="mb-4 text-xs font-medium text-emerald-400 bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-500/20">
                     <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider mb-0.5">Propriedades Ganhas</span>
                     {t.propriedadesGanhas}
@@ -892,7 +844,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             ))}
           </div>
         ) : (
-          /* MODO SPREADSHEET (TABELA COMPLETA) */
+          /* MODO SPREADSHEET */
           <div className="overflow-x-auto bg-[#111827] text-slate-200 rounded-2xl border border-[#1f2937] no-scrollbar">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -979,7 +931,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         )}
       </div>
 
-      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA (COM MINI CALENDÁRIO E CÁLCULO DE TÉRMINO) */}
+      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA COM MINI CALENDÁRIO INTERATIVO E DUPLO CLIQUE EM HORÁRIOS */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
@@ -988,7 +940,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 <span>✨</span> Criar Nova Tarefa
               </h2>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setViewDayTimeline(null);
+                }}
                 className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold"
               >
                 ✕
@@ -1154,40 +1109,78 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <p className="text-[10px] text-slate-400 mt-1">A IA ligará ou enviará lembretes no período configurado durante tarefas com início nulo ou longa duração.</p>
                 </div>
 
-                {/* MINI CALENDÁRIO COM PONTOS AZUIS (RECORRÊNCIA FIXA) E VERMELHOS (RECORRÊNCIA FLEXÍVEL) */}
+                {/* MINI CALENDÁRIO COM DUPLO CLIQUE EM HORÁRIOS DO DIA */}
                 <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-200">
-                      📅 Agenda do Mês (Visão de Ocupação)
-                    </span>
-                    <div className="flex items-center gap-3 text-[10px]">
-                      <span className="flex items-center gap-1 text-slate-300">
-                        <span className="w-2 h-2 rounded-full bg-blue-500" /> Recorrência Fixa
-                      </span>
-                      <span className="flex items-center gap-1 text-slate-300">
-                        <span className="w-2 h-2 rounded-full bg-rose-500" /> Recorrência Flexível
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-200">
+                        {viewDayTimeline !== null ? `📅 Timeline do Dia ${viewDayTimeline}` : '📅 Agenda do Mês (Dê 2 cliques para ver horários)'}
                       </span>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
-                    <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1">
-                    {generateCalendarDays().map(item => (
-                      <div
-                        key={item.day}
-                        className="p-1.5 rounded-lg bg-slate-800/60 border border-slate-700/40 text-center flex flex-col items-center justify-between min-h-[36px]"
+                    {viewDayTimeline !== null ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewDayTimeline(null)}
+                        className="px-3 py-1 bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white rounded-lg text-[10px] font-bold transition-all border border-blue-500/40"
                       >
-                        <span className="text-[10px] font-bold text-slate-300">{item.day}</span>
-                        <div className="flex items-center gap-0.5 mt-0.5">
-                          {item.exataCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />}
-                          {item.flexivelCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />}
-                        </div>
+                        ← Voltar ao Calendário
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-3 text-[10px]">
+                        <span className="flex items-center gap-1 text-slate-300">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" /> Recorrência Fixa
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-300">
+                          <span className="w-2 h-2 rounded-full bg-rose-500" /> Recorrência Flexível
+                        </span>
                       </div>
-                    ))}
+                    )}
                   </div>
+
+                  {viewDayTimeline !== null ? (
+                    /* VISÃO DE HORÁRIOS (00:00 às 23:00) AO CLICAR 2 VEZES NO DIA */
+                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                      {hoursArray.map(hour => (
+                        <div key={hour} className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/40 border border-slate-700/40 text-xs">
+                          <span className="font-mono font-bold text-blue-400 w-12">{hour}</span>
+                          <div className="flex-1 flex flex-wrap gap-2">
+                            {tasks.slice(0, 2).map(t => (
+                              <div key={t.id} className="bg-slate-900/90 border border-slate-700 px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-200 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                <span>{t.nome}</span>
+                                <span className="text-[9px] text-slate-400 font-mono">({t.duracaoEst})</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* VISÃO MENSAL DO CALENDÁRIO COM DUPLO CLIQUE */
+                    <>
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
+                        <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+                      </div>
+
+                      <div className="grid grid-cols-7 gap-1">
+                        {generateCalendarDays().map(item => (
+                          <div
+                            key={item.day}
+                            onClick={() => setViewDayTimeline(item.day)}
+                            onDoubleClick={() => setViewDayTimeline(item.day)}
+                            className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-blue-900/40 hover:border-blue-500/50 cursor-pointer border border-slate-700/40 text-center flex flex-col items-center justify-between min-h-[38px] transition-all group"
+                          >
+                            <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">{item.day}</span>
+                            <div className="flex items-center gap-0.5 mt-0.5">
+                              {item.exataCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />}
+                              {item.flexivelCount > 0 && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1257,7 +1250,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setViewDayTimeline(null);
+                  }}
                   className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
                 >
                   Cancelar
