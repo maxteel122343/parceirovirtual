@@ -121,12 +121,14 @@ function App() {
       }
     });
 
-    // Detect and persist user timezone on every app load
-    // Works in browser AND native app (React Native has Intl support)
+    // Detect and persist user timezone on every app load only if not set yet
     try {
-      const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (detectedTz) {
-        localStorage.setItem('user_timezone', detectedTz);
+      const existingTz = localStorage.getItem('user_timezone');
+      if (!existingTz) {
+        const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (detectedTz) {
+          localStorage.setItem('user_timezone', detectedTz);
+        }
       }
     } catch (_) {
       // Fallback: keep whatever was previously stored
