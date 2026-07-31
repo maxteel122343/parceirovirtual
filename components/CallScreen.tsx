@@ -1228,8 +1228,40 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                     return [];
                   };
 
+                  const getTodayInConfiguredTz = (): string => {
+                    try {
+                      const tz = localStorage.getItem('user_timezone') || 'America/Sao_Paulo';
+                      const formatter = new Intl.DateTimeFormat('en-US', {
+                        timeZone: tz,
+                        year: 'numeric', month: '2-digit', day: '2-digit'
+                      });
+                      const parts = formatter.formatToParts(new Date());
+                      const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+                      return `${partMap.year}-${partMap.month}-${partMap.day}`;
+                    } catch (_) {
+                      return new Date().toISOString().slice(0, 10);
+                    }
+                  };
+
+                  const getAdjustedInicioData = (rawInicio: string | null): string => {
+                    const todayStr = getTodayInConfiguredTz(); // ex: "2026-07-31"
+                    if (!rawInicio) {
+                      const now = new Date();
+                      const hrs = String(now.getHours()).padStart(2, '0');
+                      const mins = String(now.getMinutes()).padStart(2, '0');
+                      return `${todayStr}T${hrs}:${mins}`;
+                    }
+                    const timeMatch = rawInicio.match(/(\d{2}):(\d{2})/);
+                    if (timeMatch) {
+                      const hrs = timeMatch[1];
+                      const mins = timeMatch[2];
+                      return `${todayStr}T${hrs}:${mins}`;
+                    }
+                    return rawInicio;
+                  };
+
                   const currentTasks = getTasksFromStorage();
-                  const finalInicioData = inicioData || new Date().toISOString().slice(0, 16);
+                  const finalInicioData = getAdjustedInicioData(inicioData);
                   
                   // Helper to calculate End Date & Time from Start Date + Duration
                   const calculateTermino = (inicioStr: string | null, duracaoStr: string) => {
