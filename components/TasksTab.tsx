@@ -24,6 +24,7 @@ export interface TaskItem {
   concluidaForaHorario?: boolean;
   isAtivadaPeriodica?: boolean;
   horarioAgendaAgendado?: string;
+  isAdiada?: boolean;
 }
 
 // Helper to format date string to YYYY-MM-DDTHH:mm for datetime-local input
@@ -67,6 +68,35 @@ const calculateTermino = (inicioStr: string | null, duracaoStr: string) => {
   return `${weekday}, ${day}/${month}/${year} às ${hours}:${minutes}`;
 };
 
+// Helper to calculate AI reminder frequency based on 1/N fraction of estimated duration
+const calculateReminderFromFraction = (duracaoStr: string, fraction: string) => {
+  let totalMinutes = 30;
+  if (duracaoStr.toLowerCase().includes('h')) {
+    const hoursMatch = duracaoStr.match(/(\d+)\s*h/i);
+    const minsMatch = duracaoStr.match(/(\d+)\s*m/i);
+    const hrs = hoursMatch ? parseInt(hoursMatch[1]) : 0;
+    const mins = minsMatch ? parseInt(minsMatch[1]) : 0;
+    totalMinutes = hrs * 60 + mins;
+  } else if (duracaoStr.toLowerCase().includes('m')) {
+    const minsMatch = duracaoStr.match(/(\d+)\s*m/i);
+    totalMinutes = minsMatch ? parseInt(minsMatch[1]) : 30;
+  }
+
+  let divider = 3;
+  if (fraction === '1/5') divider = 5;
+  else if (fraction === '1/2') divider = 2;
+  else if (fraction === '1/4') divider = 4;
+
+  const intervalMin = Math.max(5, Math.round(totalMinutes / divider));
+  const percentStr = Math.round(100 / divider);
+
+  if (intervalMin >= 60) {
+    const hrs = Math.round(intervalMin / 60);
+    return `A cada ${hrs}h (${fraction} - ${percentStr}% da duração)`;
+  }
+  return `A cada ${intervalMin} min (${fraction} - ${percentStr}% da duração)`;
+};
+
 const INITIAL_TASKS: TaskItem[] = [
   {
     id: 1,
@@ -80,7 +110,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '1h 30m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '1h 30m'),
-    lembreteIa: 'A cada 1 hora',
+    lembreteIa: 'A cada 30 min (1/3 - 33% da duração)',
     proxExecucao: '12:00 PM',
     status: 'Concluído',
     quantFeita: 15,
@@ -103,7 +133,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '15m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '15m'),
-    lembreteIa: 'A cada 30 min',
+    lembreteIa: 'A cada 5 min (1/3 - 33% da duração)',
     proxExecucao: 'Indefinido',
     status: 'Pendente',
     quantFeita: 1,
@@ -147,7 +177,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '10m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '10m'),
-    lembreteIa: 'A cada 1 hora',
+    lembreteIa: 'A cada 3 min (1/3 - 33% da duração)',
     proxExecucao: '12:00 PM',
     status: 'Pendente',
     quantFeita: 1,
@@ -170,7 +200,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '72h',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '72h'),
-    lembreteIa: 'A cada 4 horas',
+    lembreteIa: 'A cada 24h (1/3 - 33% da duração)',
     proxExecucao: '2:00 PM',
     status: 'Concluído',
     quantFeita: 8,
@@ -191,7 +221,7 @@ const INITIAL_TASKS: TaskItem[] = [
     inicioData: getNowDateTimeLocal(),
     duracaoEst: '45m',
     terminoCalculado: calculateTermino(getNowDateTimeLocal(), '45m'),
-    lembreteIa: 'A cada 1 hora',
+    lembreteIa: 'A cada 15 min (1/3 - 33% da duração)',
     proxExecucao: '9:00 AM',
     status: 'Pendente',
     quantFeita: 3,
@@ -228,6 +258,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   const [ativarQuantidade, setAtivarQuantidade] = useState<number>(5);
   const [periodoHoras, setPeriodoHoras] = useState<number>(24);
   const [considerarRecorrencia, setConsiderarRecorrencia] = useState<boolean>(true);
+  const [reminderFraction, setReminderFraction] = useState<string>('1/3'); // 1/3 (33%) ou 1/5 (20%)
+  const [postponedQueue, setPostponedQueue] = useState<number[]>([]);
   const [activationFeedback, setActivationFeedback] = useState<string | null>(null);
 
   // -------------------------------------------------------------
@@ -308,9 +340,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const dateStr = currentTime.getHours() < 24 ? 'Hoje' : 'Amanhã';
 
+        // Calculate dynamic fractional AI reminder
+        const calculatedReminder = calculateReminderFromFraction(t.duracaoEst, reminderFraction);
+
         return {
           ...t,
           isAtivadaPeriodica: true,
+          isAdiada: false,
+          lembreteIa: calculatedReminder,
           horarioAgendaAgendado: t.horarioAgendaAgendado || `${dateStr} ${timeStr}`,
           proxExecucao: t.proxExecucao || timeStr
         };
@@ -319,13 +356,36 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     });
 
     setTasks(updatedTasks);
+    setPostponedQueue([]);
+
+    // Find the first task in the activated queue to be announced out loud
+    const firstTask = updatedTasks.find(t => t.isAtivadaPeriodica && t.status === 'Pendente');
+    const firstTaskName = firstTask ? firstTask.nome : 'Nenhuma tarefa pendente';
+    const firstTaskTime = firstTask ? (firstTask.horarioAgendaAgendado || firstTask.proxExecucao) : '';
+
     setActivationFeedback(
-      `⚡ IA ativou ${targetTotal} tarefas (${countExisting} já existentes na agenda + ${additionalNeeded} selecionadas por prioridade) distribuídas nas próximas ${periodoHoras} horas!`
+      `⚡ IA ativou ${targetTotal} tarefas (Lembretes em ${reminderFraction} da duração)! Primeira tarefa a fazer: "${firstTaskName}" (${firstTaskTime}).`
     );
 
     setTimeout(() => {
       setActivationFeedback(null);
-    }, 6000);
+    }, 7000);
+  };
+
+  // -------------------------------------------------------------
+  // LÓGICA DE ADIAR TAREFA (POSTPONE QUEUE)
+  // -------------------------------------------------------------
+  const handlePostponeTask = (id: number) => {
+    setTasks(prev =>
+      prev.map(t => {
+        if (t.id === id) {
+          return { ...t, isAdiada: true };
+        }
+        return t;
+      })
+    );
+
+    setPostponedQueue(prev => [...prev.filter(pid => pid !== id), id]);
   };
 
   const totalCount = tasks.length;
@@ -339,7 +399,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
   // -------------------------------------------------------------
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Form State
   const [newTaskForm, setNewTaskForm] = useState({
     nome: '',
     categoria: 'Saúde/Fitness' as 'Saúde/Fitness' | 'Casa' | 'Estudos' | 'Trabalho' | 'Tarefa',
@@ -357,7 +416,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     notas: ''
   });
 
-  // Calendar State in Modal
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date());
   const [viewDayTimeline, setViewDayTimeline] = useState<number | null>(null);
 
@@ -426,14 +484,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             const gained = t.propriedadesGanhas.split(',').map(p => p.trim().replace('+', ''));
             setComboEarnedProperties(ep => [...ep, ...gained]);
           }
-          return { ...t, status: nextStatus, quantFeita: nextQuant };
+          return { ...t, status: nextStatus, quantFeita: nextQuant, isAdiada: false };
         }
         return t;
       })
     );
   };
 
-  // Filter & Sorting Logic
+  // Filter & Sorting Logic (Postponed tasks go to the end of the active queue)
   const getFilteredTasks = () => {
     return tasks.filter(t => {
       const matchesSearch =
@@ -449,8 +507,13 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
 
       return matchesSearch && matchesCategory && matchesStatus && matchesTipo && matchesPeriodic;
     }).sort((a, b) => {
-      if (a.isAtivadaPeriodica && !b.isAtivadaPeriodica) return -1;
-      if (!a.isAtivadaPeriodica && b.isAtivadaPeriodica) return 1;
+      // 1. Non-postponed periodic activated tasks come first
+      if (a.isAtivadaPeriodica && !a.isAdiada && (!b.isAtivadaPeriodica || b.isAdiada)) return -1;
+      if ((!a.isAtivadaPeriodica || a.isAdiada) && b.isAtivadaPeriodica && !b.isAdiada) return 1;
+
+      // 2. Postponed tasks go to the end of the active queue
+      if (a.isAdiada && !b.isAdiada) return 1;
+      if (!a.isAdiada && b.isAdiada) return -1;
 
       if (sortBy === 'PRIORIDADE') {
         const pMap = { 'Classe A': 3, 'Classe B': 2, 'Classe C': 1 };
@@ -489,16 +552,13 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30';
   };
 
-  // -------------------------------------------------------------
-  // GERADOR DINÂMICO DE DIAS DO CALENDÁRIO COM RECORRÊNCIA REPETITIVA
-  // -------------------------------------------------------------
+  // Gerador dinâmico de dias do calendário
   const generateCalendarDays = () => {
     const days = [];
     const year = selectedCalendarDate.getFullYear();
     const month = selectedCalendarDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Parse current recurrence interval in form if available (ex: "72h" -> 3 days interval)
     let formRecurrenceIntervalDays = 1;
     if (newTaskForm.recorrenciaDetalhe.toLowerCase().includes('72h')) formRecurrenceIntervalDays = 3;
     else if (newTaskForm.recorrenciaDetalhe.toLowerCase().includes('48h')) formRecurrenceIntervalDays = 2;
@@ -507,7 +567,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
       let exataCount = tasks.filter(t => t.recorrenciaTipo === 'Exata').length;
       let flexivelCount = tasks.filter(t => t.recorrenciaTipo === 'Flexível').length;
 
-      // Apply dynamic recurrence dots for form input
       if (newTaskForm.recorrenciaTipo === 'Exata' && (day % formRecurrenceIntervalDays === 0 || day === 1)) {
         exataCount += 1;
       } else if (newTaskForm.recorrenciaTipo === 'Flexível' && (day % formRecurrenceIntervalDays === 0 || day === 1)) {
@@ -519,7 +578,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
     return days;
   };
 
-  // Hours array for day timeline view (00:00 to 23:00)
   const hoursArray = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
   return (
@@ -642,7 +700,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
           </div>
 
           <p className="text-xs text-slate-300 mb-6 font-medium leading-relaxed max-w-3xl">
-            Defina quantas tarefas você quer que a IA ative no seu feed e distribua automaticamente na sua agenda ao longo do tempo estipulado.
+            Defina quantas tarefas você quer que a IA ative no seu feed e o fracionamento do lembrete IA (ex: 1/3 = a cada 33% da duração, 1/5 = a cada 20%).
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-800">
@@ -667,7 +725,21 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 onChange={e => setPeriodoHoras(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-20 bg-[#0b1120] text-center font-black text-amber-400 border border-amber-500/40 rounded-xl py-2 px-2 focus:outline-none focus:border-amber-400 shadow-inner"
               />
-              <span className="text-slate-400 uppercase tracking-wider text-[11px]">HORAS (EX: 24H, 48H)</span>
+              <span className="text-slate-400 uppercase tracking-wider text-[11px]">HORAS</span>
+
+              <div className="flex items-center gap-2 ml-2">
+                <span className="text-purple-400 uppercase tracking-wider text-[11px]">LEMBRETE IA (1/N):</span>
+                <select
+                  value={reminderFraction}
+                  onChange={e => setReminderFraction(e.target.value)}
+                  className="bg-[#0b1120] text-purple-300 font-mono font-bold border border-purple-500/40 rounded-xl py-2 px-3 text-xs focus:outline-none focus:border-purple-400 shadow-inner"
+                >
+                  <option value="1/3">1/3 (A cada 33% do tempo)</option>
+                  <option value="1/5">1/5 (A cada 20% do tempo)</option>
+                  <option value="1/2">1/2 (A cada 50% do tempo)</option>
+                  <option value="1/4">1/4 (A cada 25% do tempo)</option>
+                </select>
+              </div>
 
               <label className="flex items-center gap-2 ml-4 cursor-pointer text-slate-300 hover:text-white transition-colors">
                 <input
@@ -774,16 +846,22 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
               <div
                 key={t.id}
                 className={`p-6 rounded-3xl border transition-all duration-300 relative flex flex-col justify-between ${
-                  t.isAtivadaPeriodica
+                  t.isAdiada
+                    ? 'bg-[#180e29]/70 border-purple-500/30 opacity-75'
+                    : t.isAtivadaPeriodica
                     ? 'bg-gradient-to-b from-[#1e1b4b]/60 to-[#0f172a] border-amber-500/40 shadow-xl shadow-amber-500/5'
                     : 'bg-[#111827] border-[#1f2937] hover:border-slate-700'
                 }`}
               >
-                {t.isAtivadaPeriodica && (
+                {t.isAdiada ? (
+                  <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                    <span>⏩ Tarefa Adiada (Fila Final)</span>
+                  </div>
+                ) : t.isAtivadaPeriodica ? (
                   <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                     <span>⚡ Ativação Periódica</span>
                   </div>
-                )}
+                ) : null}
 
                 <div>
                   <div className="flex items-center gap-2 mb-3">
@@ -809,8 +887,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </div>
 
                   <div className="mb-4 p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs font-bold text-purple-300 flex items-center gap-2">
-                    <span>🤖 Lembrete IA:</span>
-                    <span className="text-white font-mono">{t.lembreteIa}</span>
+                    <span>🤖 Lembrete IA ({reminderFraction}):</span>
+                    <span className="text-white font-mono text-[11px]">{t.lembreteIa}</span>
                   </div>
 
                   <div className="mb-4 space-y-1.5 bg-[#0b1120] p-3 rounded-2xl border border-slate-800">
@@ -831,8 +909,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-medium">Inércia: {t.inerciaAtual}</span>
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                  {t.status === 'Pendente' && !t.isAdiada && (
+                    <button
+                      onClick={() => handlePostponeTask(t.id)}
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30 transition-all"
+                    >
+                      ⏩ Adiar
+                    </button>
+                  )}
                   <button
                     onClick={() => toggleTaskStatus(t.id)}
                     className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${getStatusBadgeClass(t.status)}`}
@@ -857,7 +942,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">LOCALIDADE</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[160px]">RECORRÊNCIA</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[180px]">TÉRMINO CALCULADO</th>
-                  <th className="py-3 px-3 border-r border-slate-700 min-w-[130px]">LEMBRETE IA</th>
+                  <th className="py-3 px-3 border-r border-slate-700 min-w-[160px]">LEMBRETE IA (1/N)</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[110px]">STATUS</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[100px]">DURAÇÃO EST.</th>
                   <th className="py-3 px-3 border-r border-slate-700 min-w-[90px] text-center">QUANT. FEITA</th>
@@ -872,12 +957,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   <tr
                     key={t.id}
                     className={`hover:bg-slate-800/40 transition-colors ${
-                      t.isAtivadaPeriodica ? 'bg-amber-500/5' : idx % 2 === 0 ? 'bg-[#111827]' : 'bg-[#0f172a]'
+                      t.isAdiada ? 'bg-purple-950/20' : t.isAtivadaPeriodica ? 'bg-amber-500/5' : idx % 2 === 0 ? 'bg-[#111827]' : 'bg-[#0f172a]'
                     }`}
                   >
                     <td className="py-2.5 px-3 border-r border-slate-800 text-center font-bold text-slate-400">{t.id}</td>
                     <td className="py-2.5 px-4 border-r border-slate-800 font-bold text-white flex items-center gap-2">
-                      {t.isAtivadaPeriodica && <span className="text-amber-400 text-xs">⚡</span>}
+                      {t.isAdiada ? <span className="text-purple-400 text-xs">⏩</span> : t.isAtivadaPeriodica && <span className="text-amber-400 text-xs">⚡</span>}
                       <span>{t.nome}</span>
                     </td>
                     <td className="py-2.5 px-3 border-r border-slate-800">
@@ -931,7 +1016,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
         )}
       </div>
 
-      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA COM MINI CALENDÁRIO INTERATIVO E DUPLO CLIQUE EM HORÁRIOS */}
+      {/* MODAL DE CRIAÇÃO DE NOVA TAREFA COM MINI CALENDÁRIO INTERATIVO */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-[#0f172a] border border-slate-700 text-slate-100 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
@@ -951,7 +1036,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
             </div>
 
             <form onSubmit={handleCreateTask} className="space-y-6">
-              {/* BLOCO 1: Informações Básicas */}
               <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">1. Informações Básicas</h3>
                 
@@ -1014,11 +1098,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 </div>
               </div>
 
-              {/* BLOCO 2: Tempo, Regra, Início/Término & Lembrete IA */}
               <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">2. Tempo e Regra</h3>
 
-                {/* Recorrência Selector */}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -1044,7 +1126,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </button>
                 </div>
 
-                {/* Início, Duração Estimada & Término Calculado */}
                 <div className="space-y-3 bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Horário de Início</label>
@@ -1089,7 +1170,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </div>
                 </div>
 
-                {/* Lembrete IA Option */}
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
                     🤖 Lembrete IA (Notificação & Chamada Contínua)
@@ -1106,10 +1186,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                     <option value="A cada 4 horas">Lembrar a cada 4 horas</option>
                     <option value="Desativado">Desativado</option>
                   </select>
-                  <p className="text-[10px] text-slate-400 mt-1">A IA ligará ou enviará lembretes no período configurado durante tarefas com início nulo ou longa duração.</p>
                 </div>
 
-                {/* MINI CALENDÁRIO COM DUPLO CLIQUE EM HORÁRIOS DO DIA */}
                 <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
@@ -1139,7 +1217,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                   </div>
 
                   {viewDayTimeline !== null ? (
-                    /* VISÃO DE HORÁRIOS (00:00 às 23:00) AO CLICAR 2 VEZES NO DIA */
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                       {hoursArray.map(hour => (
                         <div key={hour} className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/40 border border-slate-700/40 text-xs">
@@ -1157,7 +1234,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                       ))}
                     </div>
                   ) : (
-                    /* VISÃO MENSAL DO CALENDÁRIO COM DUPLO CLIQUE */
                     <>
                       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
                         <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
@@ -1184,7 +1260,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 </div>
               </div>
 
-              {/* BLOCO 3: Contexto (Localidade e Subtasks) */}
               <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">3. Contexto</h3>
 
@@ -1220,7 +1295,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({ isDark = true }) => {
                 </div>
               </div>
 
-              {/* BLOCO 4: Resultados e Notas */}
               <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-blue-400">4. Resultados e Notas</h3>
 
