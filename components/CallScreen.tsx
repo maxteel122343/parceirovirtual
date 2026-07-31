@@ -1258,13 +1258,39 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
                   addConnectionLog('success', `IA criou e salvou a tarefa "${nome}" na nuvem.`);
                 } else if (fc.name === 'query_task_details') {
                   let currentTasks: any[] = [];
-                  try {
-                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
-                    if (saved) {
-                      const parsed = JSON.parse(saved);
-                      if (Array.isArray(parsed) && parsed.length > 0) currentTasks = parsed;
+                  const uid = user?.id || (() => {
+                    const keys = Object.keys(localStorage);
+                    let id = localStorage.getItem('parceiro_user_fp') || 'anon';
+                    for (const key of keys) {
+                      if (key.includes('supabase') && key.includes('auth')) {
+                        const val = JSON.parse(localStorage.getItem(key) || '{}');
+                        if (val?.user?.id) id = val.user.id;
+                      }
                     }
-                  } catch(e) {}
+                    return id;
+                  })();
+
+                  // Fetch from Supabase synchronously/asynchronously inside the promise
+                  try {
+                    const { data: cloudData, error } = await supabase
+                      .from('user_tasks')
+                      .select('task_data')
+                      .eq('user_id', uid);
+
+                    if (!error && cloudData) {
+                      currentTasks = cloudData.map(d => d.task_data);
+                      // Update localStorage with fresh sync data
+                      localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(currentTasks));
+                      window.dispatchEvent(new CustomEvent('tasks-updated', { detail: currentTasks }));
+                    } else {
+                      // fallback to local
+                      const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                      if (saved) currentTasks = JSON.parse(saved);
+                    }
+                  } catch (e) {
+                    const saved = localStorage.getItem('parceiro_virtual_tasks_v2');
+                    if (saved) currentTasks = JSON.parse(saved);
+                  }
 
                   result = `Detalhes das tarefas: ${JSON.stringify(currentTasks)}`;
                 } else if (fc.name === 'update_task_ai') {
