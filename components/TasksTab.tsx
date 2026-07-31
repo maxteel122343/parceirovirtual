@@ -250,6 +250,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
   const [filterTipo, setFilterTipo] = useState<string>('TODOS');
   const [sortBy, setSortBy] = useState<'RECENTE' | 'PRIORIDADE' | 'INERCIA'>('RECENTE');
   const [onlyPeriodicFilter, setOnlyPeriodicFilter] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // -------------------------------------------------------------
   // CONFIGURAÇÃO DE ATIVAÇÃO PERIÓDICA POR IA STATE
@@ -264,12 +265,24 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
 
   // Supabase Cloud Sync logic (Mobile <-> PC Realtime Sync)
   const syncTasksWithCloud = async () => {
+    setIsSyncing(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('reminders')
         .select('*')
         .like('title', '[TASK_ITEM]%')
         .order('created_at', { ascending: false });
+
+      if (user?.id) {
+        query = supabase
+          .from('reminders')
+          .select('*')
+          .like('title', '[TASK_ITEM]%')
+          .or(`owner_id.eq.${user.id},owner_id.is.null`)
+          .order('created_at', { ascending: false });
+      }
+
+      const { data, error } = await query;
 
       if (!error && data && data.length > 0) {
         const cloudTasks: TaskItem[] = [];
@@ -287,11 +300,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
         if (cloudTasks.length > 0) {
           setTasks(prev => {
             const taskMap = new Map<string, TaskItem>();
-            // Add cloud tasks first (newest tasks from cloud take priority)
             cloudTasks.forEach(ct => {
               taskMap.set(ct.nome.toLowerCase().trim(), ct);
             });
-            // Preserve any local tasks not in cloud
             prev.forEach(pt => {
               const key = pt.nome.toLowerCase().trim();
               if (!taskMap.has(key)) {
@@ -307,6 +318,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       }
     } catch (e) {
       console.error('Error syncing tasks with Supabase:', e);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -344,7 +357,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     const handleTasksUpdated = (e: any) => {
@@ -785,6 +798,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
               <span>💳</span> CARDS
             </button>
           </div>
+
+          <button
+            onClick={syncTasksWithCloud}
+            disabled={isSyncing}
+            className="px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            title="Sincronizar tarefas da nuvem Supabase"
+          >
+            <span className={isSyncing ? 'animate-spin' : ''}>🔄</span> {isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIZAR NUVEM'}
+          </button>
 
           <button
             onClick={() => setOnlyPeriodicFilter(!onlyPeriodicFilter)}
