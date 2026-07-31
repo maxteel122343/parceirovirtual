@@ -268,7 +268,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
       const { data, error } = await supabase
         .from('reminders')
         .select('*')
-        .like('title', '[TASK_ITEM]%');
+        .like('title', '[TASK_ITEM]%')
+        .order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
         const cloudTasks: TaskItem[] = [];
@@ -285,20 +286,28 @@ export const TasksTab: React.FC<TasksTabProps> = ({ user, isDark = true }) => {
 
         if (cloudTasks.length > 0) {
           setTasks(prev => {
-            const existingIds = new Set(prev.map(t => t.id));
-            const existingNames = new Set(prev.map(t => t.nome.toLowerCase()));
-            const newAdditions = cloudTasks.filter(ct => !existingIds.has(ct.id) && !existingNames.has(ct.nome.toLowerCase()));
-            
-            if (newAdditions.length > 0) {
-              const merged = [...newAdditions, ...prev];
-              localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(merged));
-              return merged;
-            }
-            return prev;
+            const taskMap = new Map<string, TaskItem>();
+            // Add cloud tasks first (newest tasks from cloud take priority)
+            cloudTasks.forEach(ct => {
+              taskMap.set(ct.nome.toLowerCase().trim(), ct);
+            });
+            // Preserve any local tasks not in cloud
+            prev.forEach(pt => {
+              const key = pt.nome.toLowerCase().trim();
+              if (!taskMap.has(key)) {
+                taskMap.set(key, pt);
+              }
+            });
+
+            const merged = Array.from(taskMap.values());
+            localStorage.setItem('parceiro_virtual_tasks_v2', JSON.stringify(merged));
+            return merged;
           });
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Error syncing tasks with Supabase:', e);
+    }
   };
 
   // Persistence & Realtime Event Listeners

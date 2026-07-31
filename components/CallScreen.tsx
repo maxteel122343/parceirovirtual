@@ -1178,14 +1178,16 @@ Categorias válidas: relacionamento, produtividade, comportamento, emocao, ciume
 
                   // Persist to Supabase for instant Mobile <-> PC Cross-Device Sync
                   try {
-                    supabase.from('reminders').insert({
+                    await supabase.from('reminders').insert({
                       owner_id: user?.id || null,
                       title: `[TASK_ITEM] ${nome}`,
                       notes: JSON.stringify(newTask),
                       trigger_at: new Date().toISOString(),
                       creator_ai_name: profile?.name || 'IA'
-                    }).then();
-                  } catch (e) {}
+                    });
+                  } catch (e) {
+                    console.error('Error persisting task to Supabase:', e);
+                  }
 
                   result = `CONFIRMAÇÃO DO SISTEMA: A tarefa "${nome}" foi SALVA com sucesso na nuvem do Supabase e sincronizada no seu computador e celular! INSTRUÇÃO PARA A IA: Confirme em voz alta para o usuário que a tarefa "${nome}" foi criada e já está salva na nuvem e aparecendo na tela!`;
                   addConnectionLog('success', `IA criou e salvou a tarefa "${nome}" na nuvem.`);
