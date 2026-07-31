@@ -726,13 +726,75 @@ function App() {
 
         // User Timezone or default Sao Paulo fuso
         const tz = localStorage.getItem('user_timezone') || 'America/Sao_Paulo';
-        const userLocalDateStr = new Date().toLocaleString('en-US', { timeZone: tz });
-        const userLocalTime = new Date(userLocalDateStr).getTime();
+        
+        // Helper to parse local datetime string (YYYY-MM-DDTHH:mm) to timestamp in selected timezone
+        const getTimestampInTz = (dateStr: string): number => {
+          try {
+            // Split "2026-07-31T16:45"
+            const [datePart, timePart] = dateStr.split('T');
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hour, minute] = timePart.split(':').map(Number);
+            
+            // Create target date in UTC representation of the local components
+            const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+            
+            // Adjust based on timezone offset of target timezone relative to UTC at that instant
+            const formatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              year: 'numeric', month: 'numeric', day: 'numeric',
+              hour: 'numeric', minute: 'numeric', second: 'numeric',
+              hour12: false
+            });
+            
+            const parts = formatter.formatToParts(utcDate);
+            const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+            
+            const formattedDateInTz = new Date(Date.UTC(
+              Number(partMap.year),
+              Number(partMap.month) - 1,
+              Number(partMap.day),
+              Number(partMap.hour),
+              Number(partMap.minute)
+            ));
+            
+            const diff = utcDate.getTime() - formattedDateInTz.getTime();
+            return utcDate.getTime() + diff;
+          } catch (_) {
+            return new Date(dateStr).getTime();
+          }
+        };
+
+        // Current time timestamp adjusted to selected timezone
+        const userLocalTime = (() => {
+          const now = new Date();
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz,
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: 'numeric', minute: 'numeric', second: 'numeric',
+            hour12: false
+          });
+          const parts = formatter.formatToParts(now);
+          const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+          return new Date(
+            Number(partMap.year),
+            Number(partMap.month) - 1,
+            Number(partMap.day),
+            Number(partMap.hour),
+            Number(partMap.minute),
+            Number(partMap.second)
+          ).getTime();
+        })();
 
         for (const task of tasksList) {
           if (!task.inicioData || task.status === 'Concluído') continue;
 
-          const taskStartTime = new Date(new Date(task.inicioData).toLocaleString('en-US', { timeZone: tz })).getTime();
+          // Parse task start time components
+          const taskStartTime = (() => {
+            const [datePart, timePart] = task.inicioData.split('T');
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hour, minute] = timePart.split(':').map(Number);
+            return new Date(year, month - 1, day, hour, minute).getTime();
+          })();
           const durationMinutes = parseDurationToMinutes(task.duracaoEst);
           const taskEndTime = taskStartTime + durationMinutes * 60 * 1000;
 
